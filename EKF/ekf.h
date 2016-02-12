@@ -185,6 +185,9 @@ private:
 	// return true if successful
 	bool resetMagHeading(Vector3f &mag_init);
 
+	// calculate the magnetic declination to be used by the alignment and fusion processing
+	void calcMagDeclination();
+
 	void resetPosition();
 
 	void resetHeight();
