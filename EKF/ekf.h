@@ -120,6 +120,7 @@ private:
 	float _vel_pos_innov[6];	// innovations: 0-2 vel,  3-5 pos
 	float _mag_innov[3];		// earth magnetic field innovations
 	float _heading_innov;		// heading measurement innovation
+	float _airspeed_innov;		// airspeed measurement innovation
 
 	float _vel_pos_innov_var[6]; // innovation variances: 0-2 vel, 3-5 pos
 	float _mag_innov_var[3]; // earth magnetic field innovation variance

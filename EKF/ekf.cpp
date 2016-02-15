@@ -435,7 +435,28 @@ void Ekf::calculateOutputStates()
 
 
 void Ekf::fuseAirspeed()
-{
+{ 
+	// Initialize variables
+	float vn; // Velocity in north direction 
+    float ve; // Velocity in east direction
+    float vd; // Velocity in downwards direction
+    float vwn; // Wind speed in north direction
+    float vwe; // Wind speed in east direction
+    float R_TAS = sq(airspeedMeasurementSigma);
+    float SH_TAS[3];
+    float SK_TAS;
+    float VtasPred;
+
+    // Copy required states to local variable names
+    vn = _state.vel(1); 
+    ve = _state.vel(2); 
+    vd = _state.vel(3); 
+    vwn =  _state.wind_vel(1); 
+    vwe = _state.wind_vel(2);  
+
+	// Calculate the predicted airspeed
+    VtasPred = sqrtf((ve - vwe)*(ve - vwe) + (vn - vwn)*(vn - vwn) + vd*vd);
+    _airspeed_innov = VtasPred - _airspeed_sample_delayed; // calculate innovation
 
 }
 
