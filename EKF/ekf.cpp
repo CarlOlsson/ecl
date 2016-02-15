@@ -435,28 +435,107 @@ void Ekf::calculateOutputStates()
 
 
 void Ekf::fuseAirspeed()
-{ 
+{
 	// Initialize variables
-	float vn; // Velocity in north direction 
-    float ve; // Velocity in east direction
-    float vd; // Velocity in downwards direction
-    float vwn; // Wind speed in north direction
-    float vwe; // Wind speed in east direction
-    float R_TAS = sq(airspeedMeasurementSigma);
-    float SH_TAS[3];
-    float SK_TAS;
-    float VtasPred;
+	float vn; // Velocity in north direction
+	float ve; // Velocity in east direction
+	float vd; // Velocity in downwards direction
+	float vwn; // Wind speed in north direction
+	float vwe; // Wind speed in east direction
+	float VtasPred; // Predicted measurement
+	float R_TAS = sq(airspeedMeasurementSigma); // Variance for true airspeed measurement - (m/sec)^2 ADD THIS!
+	float SH_TAS[3]; // Varialbe used to optimise calculations of measurement jacobian
+	float H_TAS[24]; // Observation Jacobian
+	float SK_TAS[2][1]; // Varialbe used to optimise calculations of the Kalman gain vector
+	float K_TAS[24][1]; // Kalman gain vector
 
-    // Copy required states to local variable names
-    vn = _state.vel(1); 
-    ve = _state.vel(2); 
-    vd = _state.vel(3); 
-    vwn =  _state.wind_vel(1); 
-    vwe = _state.wind_vel(2);  
+	// Copy required states to local variable names
+	vn = _state.vel(1);
+	ve = _state.vel(2);
+	vd = _state.vel(3);
+	vwn =  _state.wind_vel(1);
+	vwe = _state.wind_vel(2);
 
 	// Calculate the predicted airspeed
-    VtasPred = sqrtf((ve - vwe)*(ve - vwe) + (vn - vwn)*(vn - vwn) + vd*vd);
-    _airspeed_innov = VtasPred - _airspeed_sample_delayed; // calculate innovation
+	VtasPred = sqrtf((ve - vwe) * (ve - vwe) + (vn - vwn) * (vn - vwn) + vd * vd);
+
+	// Perform fusion of True Airspeed measurement
+
+	// Calculate observation jacobian
+	SH_TAS[0] = 1 / (sqrtf(sq(ve - vwe) + sq(vn - vwn) + sq(vd)));
+	SH_TAS[1] = (SH_TAS[0] * (2.0f * ve - 2 * vwe)) / 2.0f;
+	SH_TAS[2] = (SH_TAS[0] * (2.0f * vn - 2 * vwn)) / 2.0f;
+
+	for (uint8_t i = 0; i < 24; i++) { H_TAS[i] = 0.0f; } // Remove magic number 24 = nr. of states
+
+	H_TAS[3] = SH_TAS[2]; // This is not the same as for estimator_22states.cpp, why?
+	H_TAS[4] = SH_TAS[1];
+	H_TAS[5] = vd * SH_TAS[0];
+	H_TAS[22] = -SH_TAS[2];
+	H_TAS[23] = -SH_TAS[1];
+
+	SK_TAS[0] = 1 / (R_TAS + SH_TAS[2] * (P[4][4] * SH_TAS[2] + P[5][4] * SH_TAS[1] - P[16][4] * SH_TAS[2] - P[17][4] * SH_TAS[1] + P[6][4] * vd *SH_TAS[0]) + SH_TAS[1] * (P[4][5] * SH_TAS[2] + P[5][5] * SH_TAS[1] - P[16][5] * SH_TAS[2] - P[17][5] * SH_TAS[1] + P[6][5] * vd *SH_TAS[0]) - SH_TAS[2] * (P[4][16] * SH_TAS[2] + P[5][16] * SH_TAS[1] - P[16][16] * SH_TAS[2] - P[17][16] * SH_TAS[1] + P[6][16] * vd *SH_TAS[0]) - SH_TAS[1] * (P[4][17] * SH_TAS[2] + P[5][17] * SH_TAS[1] - P[16][17] * SH_TAS[2] - P[17][17] * SH_TAS[1] + P[6][17] * vd *SH_TAS[0]) + vd *SH_TAS[0] * (P[4][6] * SH_TAS[2] + P[5][6] * SH_TAS[1] - P[16][6] * SH_TAS[2] - P[17][6] * SH_TAS[1] + P[6][6] * vd *SH_TAS[0]));
+	SK_TAS[1] = SH_TAS[1];
+K_TAS[0] = SK_TAS[0]*(P[0][4]*SH_TAS[2] - P[0][16]*SH_TAS[2] + P[0][5]*SK_TAS[1] - P[0][17]*SK_TAS[1] + P[0][6]*vd*SH_TAS[0]);
+K_TAS[1] = SK_TAS[0]*(P[1][4]*SH_TAS[2] - P[1][16]*SH_TAS[2] + P[1][5]*SK_TAS[1] - P[1][17]*SK_TAS[1] + P[1][6]*vd*SH_TAS[0]);
+K_TAS[2] = SK_TAS[0]*(P[2][4]*SH_TAS[2] - P[2][16]*SH_TAS[2] + P[2][5]*SK_TAS[1] - P[2][17]*SK_TAS[1] + P[2][6]*vd*SH_TAS[0]);
+K_TAS[3] = SK_TAS[0]*(P[3][4]*SH_TAS[2] - P[3][16]*SH_TAS[2] + P[3][5]*SK_TAS[1] - P[3][17]*SK_TAS[1] + P[3][6]*vd*SH_TAS[0]);
+K_TAS[4] = SK_TAS[0]*(P[4][4]*SH_TAS[2] - P[4][16]*SH_TAS[2] + P[4][5]*SK_TAS[1] - P[4][17]*SK_TAS[1] + P[4][6]*vd*SH_TAS[0]);
+K_TAS[5] = SK_TAS[0]*(P[5][4]*SH_TAS[2] - P[5][16]*SH_TAS[2] + P[5][5]*SK_TAS[1] - P[5][17]*SK_TAS[1] + P[5][6]*vd*SH_TAS[0]);
+K_TAS[6] = SK_TAS[0]*(P[6][4]*SH_TAS[2] - P[6][16]*SH_TAS[2] + P[6][5]*SK_TAS[1] - P[6][17]*SK_TAS[1] + P[6][6]*vd*SH_TAS[0]);
+K_TAS[7] = SK_TAS[0]*(P[7][4]*SH_TAS[2] - P[7][16]*SH_TAS[2] + P[7][5]*SK_TAS[1] - P[7][17]*SK_TAS[1] + P[7][6]*vd*SH_TAS[0]);
+K_TAS[8] = SK_TAS[0]*(P[8][4]*SH_TAS[2] - P[8][16]*SH_TAS[2] + P[8][5]*SK_TAS[1] - P[8][17]*SK_TAS[1] + P[8][6]*vd*SH_TAS[0]);
+K_TAS[9] = SK_TAS[0]*(P[9][4]*SH_TAS[2] - P[9][16]*SH_TAS[2] + P[9][5]*SK_TAS[1] - P[9][17]*SK_TAS[1] + P[9][6]*vd*SH_TAS[0]);
+K_TAS[10] = SK_TAS[0]*(P[10][4]*SH_TAS[2] - P[10][16]*SH_TAS[2] + P[10][5]*SK_TAS[1] - P[10][17]*SK_TAS[1] + P[10][6]*vd*SH_TAS[0]);
+K_TAS[11] = SK_TAS[0]*(P[11][4]*SH_TAS[2] - P[11][16]*SH_TAS[2] + P[11][5]*SK_TAS[1] - P[11][17]*SK_TAS[1] + P[11][6]*vd*SH_TAS[0]);
+K_TAS[12] = SK_TAS[0]*(P[12][4]*SH_TAS[2] - P[12][16]*SH_TAS[2] + P[12][5]*SK_TAS[1] - P[12][17]*SK_TAS[1] + P[12][6]*vd*SH_TAS[0]);
+K_TAS[13] = SK_TAS[0]*(P[13][4]*SH_TAS[2] - P[13][16]*SH_TAS[2] + P[13][5]*SK_TAS[1] - P[13][17]*SK_TAS[1] + P[13][6]*vd*SH_TAS[0]);
+K_TAS[14] = SK_TAS[0]*(P[14][4]*SH_TAS[2] - P[14][16]*SH_TAS[2] + P[14][5]*SK_TAS[1] - P[14][17]*SK_TAS[1] + P[14][6]*vd*SH_TAS[0]);
+K_TAS[15] = SK_TAS[0]*(P[15][4]*SH_TAS[2] - P[15][16]*SH_TAS[2] + P[15][5]*SK_TAS[1] - P[15][17]*SK_TAS[1] + P[15][6]*vd*SH_TAS[0]);
+K_TAS[16] = SK_TAS[0]*(P[16][4]*SH_TAS[2] - P[16][16]*SH_TAS[2] + P[16][5]*SK_TAS[1] - P[16][17]*SK_TAS[1] + P[16][6]*vd*SH_TAS[0]);
+K_TAS[17] = SK_TAS[0]*(P[17][4]*SH_TAS[2] - P[17][16]*SH_TAS[2] + P[17][5]*SK_TAS[1] - P[17][17]*SK_TAS[1] + P[17][6]*vd*SH_TAS[0]);
+K_TAS[18] = SK_TAS[0]*(P[18][4]*SH_TAS[2] - P[18][16]*SH_TAS[2] + P[18][5]*SK_TAS[1] - P[18][17]*SK_TAS[1] + P[18][6]*vd*SH_TAS[0]);
+K_TAS[19] = SK_TAS[0]*(P[19][4]*SH_TAS[2] - P[19][16]*SH_TAS[2] + P[19][5]*SK_TAS[1] - P[19][17]*SK_TAS[1] + P[19][6]*vd*SH_TAS[0]);
+K_TAS[20] = SK_TAS[0]*(P[20][4]*SH_TAS[2] - P[20][16]*SH_TAS[2] + P[20][5]*SK_TAS[1] - P[20][17]*SK_TAS[1] + P[20][6]*vd*SH_TAS[0]);
+K_TAS[21] = SK_TAS[0]*(P[21][4]*SH_TAS[2] - P[21][16]*SH_TAS[2] + P[21][5]*SK_TAS[1] - P[21][17]*SK_TAS[1] + P[21][6]*vd*SH_TAS[0]);
+K_TAS[22] = SK_TAS[0]*(P[22][4]*SH_TAS[2] - P[22][16]*SH_TAS[2] + P[22][5]*SK_TAS[1] - P[22][17]*SK_TAS[1] + P[22][6]*vd*SH_TAS[0]);
+K_TAS[23] = SK_TAS[0]*(P[23][4]*SH_TAS[2] - P[23][16]*SH_TAS[2] + P[23][5]*SK_TAS[1] - P[23][17]*SK_TAS[1] + P[23][6]*vd*SH_TAS[0]);
+
+
+	// calculate measurement innovation
+	_airspeed_innov = VtasPred - _airspeed_sample_delayed; // Is the EAS or TAS???
+
+	// by definition the angle error state is zero at the fusion time
+	_state.ang_error.setZero();
+
+	// Fuse airspeed measurement
+	fuse(K_TAS, _vel_pos_innov[obs_index]); //Why calculate angle error when it is always zero?
+
+	// correct the nominal quaternion
+	Quaternion dq;
+	dq.from_axis_angle(_state.ang_error);
+	_state.quat_nominal = dq * _state.quat_nominal;
+	_state.quat_nominal.normalize();
+
+	// update covarinace matrix via Pnew = (I - KH)P
+	float KHP[_k_num_states][_k_num_states] = {};
+
+	for (unsigned row = 0; row < _k_num_states; row++)
+	{
+		for (unsigned column = 0; column < _k_num_states; column++) { // Here it will be a lot of zeros...
+			KHP[row][column] = Kfusion[row] * H_TAS[column] * P[state_index][column];
+		}
+	}
+
+	for (unsigned row = 0; row < _k_num_states; row++)
+	{
+		for (unsigned column = 0; column < _k_num_states; column++) {
+			P[row][column] = P[row][column] - KHP[row][column];
+		}
+	}
+
+	makeSymmetrical();
+	limitCov();
 
 }
 

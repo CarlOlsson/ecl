@@ -142,7 +142,7 @@ struct parameters {
 	float heading_innov_gate = 3.0f;    // heading fusion innovation consistency gate size in standard deviations
 	float mag_innov_gate = 3.0f;        // magnetometer fusion innovation consistency gate size in standard deviations
 
-	// these parameters control the strictness of GPS quality checks used to determine uf the GPS is
+	// these parameters control the strictness of GPS quality checks used to determine if the GPS is
 	// good enough to set a local origin and commence aiding
 	int gps_check_mask = 21;    // bitmask used to control which GPS quality checks are used
 	float req_hacc = 5.0f;      // maximum acceptable horizontal position error
