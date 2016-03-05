@@ -166,8 +166,8 @@ void Ekf::controlFusionModes()
 
 	// Placeholder for control of wind velocity states estimation
 	// TODO add methods for true airspeed and/or sidelsip fusion or some type of drag force measurement
-	if (false) {
-		_control_status.flags.wind = false;
+	if (true) {
+		_control_status.flags.wind = true;
 	}
 
 	// Store the status to enable change detection
