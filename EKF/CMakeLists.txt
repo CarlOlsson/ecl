@@ -65,6 +65,7 @@ set(SRCS
 	mag_fusion.cpp
 	gps_checks.cpp
 	airspeed_fusion.cpp
+	sideslip_fusion.cpp
 	control.cpp
 	geo.cpp
 	mathlib.cpp
