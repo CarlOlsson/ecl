@@ -44,4 +44,31 @@
 
 void Ekf::fuseSideslip()
 { 
+	// get latest estimated orientation
+	float q0 = _state.quat_nominal(0);
+	float q1 = _state.quat_nominal(1);
+	float q2 = _state.quat_nominal(2);
+	float q3 = _state.quat_nominal(3);
+
+	// get latest velocity in earth frame
+	float vn = _state.vel(0);
+	float ve = _state.vel(1);
+	float vd = _state.vel(2);
+
+	// get latest wind velocity in earth frame
+	float vwn = _state.wind_vel(0);
+	float vwe = _state.wind_vel(1);
+
+	float SH_BETA[?] = {}; // Varialbe used to optimise calculations of measurement jacobian
+	float H_BETA[?] = {}; // Observation Jacobian
+	float SK_BETA[?] = {}; // Varialbe used to optimise calculations of the Kalman gain vector
+	float Kfusion[24] = {}; // Kalman gain vector
+
+	// relative wind velocity in earth frame
+    float rel_vwn = vn - vwn;
+    float rel_vwe = ve - vwe;
+    float rel_vwd = vd;
+
+    // rotate into body axes
+    vel_rel_wind = prevTnb * vel_rel_wind;
 }
