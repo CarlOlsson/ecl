@@ -274,6 +274,9 @@ private:
 	// fuse airspeed measurement
 	void fuseAirspeed();
 
+	// fuse sideslip measurement
+	void fuseSideslip();
+
 	// fuse velocity and position measurements (also barometer height)
 	void fuseVelPosHeight();
 
