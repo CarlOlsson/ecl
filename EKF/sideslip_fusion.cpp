@@ -65,10 +65,10 @@ void Ekf::fuseSideslip()
 	float vwe = _state.wind_vel(1);
 
 	// relative wind velocity in earth frame
-    Vector3f rel_vind; 
-    rel_vind(0) = vn - vwn;
-    rel_vind(1) = ve - vwe;
-    rel_vind(2) = vd;
+    Vector3f rel_wind; 
+    rel_wind(0) = vn - vwn;
+    rel_wind(1) = ve - vwe;
+    rel_wind(2) = vd;
 
     matrix::Dcm<float> earth_to_body(_state.quat_nominal);
 	earth_to_body = earth_to_body.transpose(); //Why transpose?
