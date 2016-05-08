@@ -273,6 +273,7 @@ protected:
 	float _mag_test_ratio[3];       // magnetometer XYZ innovation consistency check ratios
 	float _vel_pos_test_ratio[6];   // velocity and position innovation consistency check ratios
 	float _tas_test_ratio;			// tas innovation consistency check ratio
+	float _beta_test_ratio;			// sideslip innovation consistency check ratio
 
 	// data buffer instances
 	RingBuffer<imuSample> _imu_buffer;

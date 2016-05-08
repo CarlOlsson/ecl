@@ -201,6 +201,9 @@ struct parameters {
 	float tas_innov_gate;		// True Airspeed Innovation consistency gate size in standard deciation [WHAT SHALL THIS VALUE BE?]
   	float eas_noise;			// EAS measurement noise standard deviation used for airspeed fusion [m/s]
 
+  	// syntetic sideslip fusion
+  	float beta_innov_gate;		// Syntetic sideslip innovation consistency gate size in standard deviation
+
 	// range finder fusion
 	float range_noise;		// observation noise for range finder measurements (m)
 	float range_innov_gate;		// range finder fusion innovation consistency gate size (STD)
@@ -280,7 +283,10 @@ struct parameters {
 
 		// airspeed fusion
 		tas_innov_gate = 3.0f; // [CHECK THIS VALUE]		
-  		eas_noise = 1.4f;			
+  		eas_noise = 1.4f;	
+
+  		// sysntetic sideslip fusion
+  		beta_innov_gate = 5.0f;		// [CHECK THIS VALUE]
 
 		// range finder fusion
 		range_noise = 0.1f;

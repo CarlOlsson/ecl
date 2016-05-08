@@ -148,8 +148,9 @@ void Ekf::fuseSideslip()
         Kfusion[15] = SK_BETA[0]*(P[15][5]*SK_BETA[1] - P[15][2]*SK_BETA[4] - P[15][3]*SK_BETA[2] + P[15][4]*SK_BETA[3] + P[15][22]*SK_BETA[2] - P[15][23]*SK_BETA[3] + P[15][0]*SH_BETA[6]*SH_BETA[2] + P[15][1]*SH_BETA[1]*SH_BETA[3]*SH_BETA[2]);
         Kfusion[22] = SK_BETA[0]*(P[22][5]*SK_BETA[1] - P[22][2]*SK_BETA[4] - P[22][3]*SK_BETA[2] + P[22][4]*SK_BETA[3] + P[22][22]*SK_BETA[2] - P[22][23]*SK_BETA[3] + P[22][0]*SH_BETA[6]*SH_BETA[2] + P[22][1]*SH_BETA[1]*SH_BETA[3]*SH_BETA[2]);
         Kfusion[23] = SK_BETA[0]*(P[23][5]*SK_BETA[1] - P[23][2]*SK_BETA[4] - P[23][3]*SK_BETA[2] + P[23][4]*SK_BETA[3] + P[23][22]*SK_BETA[2] - P[23][23]*SK_BETA[3] + P[23][0]*SH_BETA[6]*SH_BETA[2] + P[23][1]*SH_BETA[1]*SH_BETA[3]*SH_BETA[2]);
-        // zero Kalman gains to inhibit magnetic field state estimation
-        if (!inhibitMagStates) {
+		
+		// Only update the magnetometer states if we are airborne and using 3D mag fusion
+		if (_control_status.flags.mag_3D && _control_status.flags.in_air) {
             Kfusion[16] = SK_BETA[0]*(P[16][5]*SK_BETA[1] - P[16][2]*SK_BETA[4] - P[16][3]*SK_BETA[2] + P[16][4]*SK_BETA[3] + P[16][22]*SK_BETA[2] - P[16][23]*SK_BETA[3] + P[16][0]*SH_BETA[6]*SH_BETA[2] + P[16][1]*SH_BETA[1]*SH_BETA[3]*SH_BETA[2]);
             Kfusion[17] = SK_BETA[0]*(P[17][5]*SK_BETA[1] - P[17][2]*SK_BETA[4] - P[17][3]*SK_BETA[2] + P[17][4]*SK_BETA[3] + P[17][22]*SK_BETA[2] - P[17][23]*SK_BETA[3] + P[17][0]*SH_BETA[6]*SH_BETA[2] + P[17][1]*SH_BETA[1]*SH_BETA[3]*SH_BETA[2]);
             Kfusion[18] = SK_BETA[0]*(P[18][5]*SK_BETA[1] - P[18][2]*SK_BETA[4] - P[18][3]*SK_BETA[2] + P[18][4]*SK_BETA[3] + P[18][22]*SK_BETA[2] - P[18][23]*SK_BETA[3] + P[18][0]*SH_BETA[6]*SH_BETA[2] + P[18][1]*SH_BETA[1]*SH_BETA[3]*SH_BETA[2]);
@@ -157,18 +158,30 @@ void Ekf::fuseSideslip()
             Kfusion[20] = SK_BETA[0]*(P[20][5]*SK_BETA[1] - P[20][2]*SK_BETA[4] - P[20][3]*SK_BETA[2] + P[20][4]*SK_BETA[3] + P[20][22]*SK_BETA[2] - P[20][23]*SK_BETA[3] + P[20][0]*SH_BETA[6]*SH_BETA[2] + P[20][1]*SH_BETA[1]*SH_BETA[3]*SH_BETA[2]);
             Kfusion[21] = SK_BETA[0]*(P[21][5]*SK_BETA[1] - P[21][2]*SK_BETA[4] - P[21][3]*SK_BETA[2] + P[21][4]*SK_BETA[3] + P[21][22]*SK_BETA[2] - P[21][23]*SK_BETA[3] + P[21][0]*SH_BETA[6]*SH_BETA[2] + P[21][1]*SH_BETA[1]*SH_BETA[3]*SH_BETA[2]);
         } else {
-            for (uint8_t i=16; i<=21; i++) {
+            for (int i = 16; i <= 21; i++) {
                 Kfusion[i] = 0.0f;
             }
         }
 
-        // calculate predicted sideslip angle and innovation using small angle approximation
+        // Calculate predicted sideslip angle and innovation using small angle approximation
         _beta_innov = rel_wind(1) / rel_wind(0);
+
+		// Calculate the innovation variance
+		_beta_innov_var = 1.0f / SK_BETA[0];
 
         // reject measurement if greater than 3-sigma inconsistency
         if (_beta_innov > 0.5f) { //add innovation gate
             return;
         }
+
+        // Compute the ratio of innovation to gate size
+		_beta_test_ratio = sq(_beta_innov) / (sq(fmaxf(_params.beta_innov_gate, 1.0f)) * _beta_innov_var);
+
+		// if the innocation consistency check fails then don't fuse the sample and indicate bad airspeed health
+		if (_beta_test_ratio > 1.0f) {
+			//_airspeed_healthy = false;
+			return;
+		}
 
 		// by definition the angle error state is zero at the fusion time
 		_state.ang_error.setZero();
@@ -206,30 +219,4 @@ void Ekf::fuseSideslip()
 		makeSymmetrical();
 		limitCov();
     }
-
-    // force the covariance matrix to me symmetrical and limit the variances to prevent ill-condiioning.
-    ForceSymmetry();
-    ConstrainVariances();
-
-
-
-
-
-
-
-
-
-
-
-
-
-    }
 }
-
-
-
-
-
-
-	// rotate into body frame
-	Vector3f vel_body = earth_to_body * vel_rel_earth;
