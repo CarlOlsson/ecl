@@ -203,6 +203,7 @@ struct parameters {
 
   	// syntetic sideslip fusion
   	float beta_innov_gate;		// Syntetic sideslip innovation consistency gate size in standard deviation
+  	float beta_noise;			// Syntetic sideslip noise
 
 	// range finder fusion
 	float range_noise;		// observation noise for range finder measurements (m)
@@ -287,6 +288,7 @@ struct parameters {
 
   		// sysntetic sideslip fusion
   		beta_innov_gate = 5.0f;		// [CHECK THIS VALUE]
+  		beta_noise = 0.03f; // Check this value
 
 		// range finder fusion
 		range_noise = 0.1f;
