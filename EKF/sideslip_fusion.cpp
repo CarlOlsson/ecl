@@ -85,11 +85,8 @@ void Ekf::fuseSideslip()
 		// intermediate variable from algebraic optimisation
         SH_BETA[0] = (vn - vwn)*(sq(q0) + sq(q1) - sq(q2) - sq(q3)) - vd*(2*q0*q2 - 2*q1*q3) + (ve - vwe)*(2*q0*q3 + 2*q1*q2);
         if (fabsf(SH_BETA[0]) <= 1e-9f) {
-            //faultStatus.bad_sideslip = true;
             return;
-        } else {
-            //faultStatus.bad_sideslip = false;
-        }
+        } 
         SH_BETA[0] = (vn - vwn)*(sq(q0) + sq(q1) - sq(q2) - sq(q3)) - vd*(2*q0*q2 - 2*q1*q3) + (ve - vwe)*(2*q0*q3 + 2*q1*q2);
         SH_BETA[1] = (ve - vwe)*(sq(q0) - sq(q1) + sq(q2) - sq(q3)) + vd*(2*q0*q1 + 2*q2*q3) - (vn - vwn)*(2*q0*q3 - 2*q1*q2);
         SH_BETA[2] = vd*(sq(q0) - sq(q1) - sq(q2) + sq(q3)) - (ve - vwe)*(2*q0*q1 - 2*q2*q3) + (vn - vwn)*(2*q0*q2 + 2*q1*q3);
@@ -116,12 +113,9 @@ void Ekf::fuseSideslip()
         float temp = (R_BETA + (SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8])*(P[22][4]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[3][4]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[2][4]*(sq(SH_BETA[1])*SH_BETA[3] + 1) + P[5][4]*(SH_BETA[6]*(2*q0*q1 + 2*q2*q3) + SH_BETA[1]*SH_BETA[3]*(2*q0*q2 - 2*q1*q3)) + P[4][4]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) - P[23][4]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) + P[0][4]*SH_BETA[2]*SH_BETA[6] + P[1][4]*SH_BETA[1]*SH_BETA[2]*SH_BETA[3]) - (SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8])*(P[22][23]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[3][23]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[2][23]*(sq(SH_BETA[1])*SH_BETA[3] + 1) + P[5][23]*(SH_BETA[6]*(2*q0*q1 + 2*q2*q3) + SH_BETA[1]*SH_BETA[3]*(2*q0*q2 - 2*q1*q3)) + P[4][23]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) - P[23][23]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) + P[0][23]*SH_BETA[2]*SH_BETA[6] + P[1][23]*SH_BETA[1]*SH_BETA[2]*SH_BETA[3]) - (SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5])*(P[22][3]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[3][3]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[2][3]*(sq(SH_BETA[1])*SH_BETA[3] + 1) + P[5][3]*(SH_BETA[6]*(2*q0*q1 + 2*q2*q3) + SH_BETA[1]*SH_BETA[3]*(2*q0*q2 - 2*q1*q3)) + P[4][3]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) - P[23][3]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) + P[0][3]*SH_BETA[2]*SH_BETA[6] + P[1][3]*SH_BETA[1]*SH_BETA[2]*SH_BETA[3]) + (SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5])*(P[22][22]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[3][22]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[2][22]*(sq(SH_BETA[1])*SH_BETA[3] + 1) + P[5][22]*(SH_BETA[6]*(2*q0*q1 + 2*q2*q3) + SH_BETA[1]*SH_BETA[3]*(2*q0*q2 - 2*q1*q3)) + P[4][22]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) - P[23][22]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) + P[0][22]*SH_BETA[2]*SH_BETA[6] + P[1][22]*SH_BETA[1]*SH_BETA[2]*SH_BETA[3]) - (sq(SH_BETA[1])*SH_BETA[3] + 1)*(P[22][2]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[3][2]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[2][2]*(sq(SH_BETA[1])*SH_BETA[3] + 1) + P[5][2]*(SH_BETA[6]*(2*q0*q1 + 2*q2*q3) + SH_BETA[1]*SH_BETA[3]*(2*q0*q2 - 2*q1*q3)) + P[4][2]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) - P[23][2]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) + P[0][2]*SH_BETA[2]*SH_BETA[6] + P[1][2]*SH_BETA[1]*SH_BETA[2]*SH_BETA[3]) + (SH_BETA[6]*(2*q0*q1 + 2*q2*q3) + SH_BETA[1]*SH_BETA[3]*(2*q0*q2 - 2*q1*q3))*(P[22][5]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[3][5]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[2][5]*(sq(SH_BETA[1])*SH_BETA[3] + 1) + P[5][5]*(SH_BETA[6]*(2*q0*q1 + 2*q2*q3) + SH_BETA[1]*SH_BETA[3]*(2*q0*q2 - 2*q1*q3)) + P[4][5]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) - P[23][5]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) + P[0][5]*SH_BETA[2]*SH_BETA[6] + P[1][5]*SH_BETA[1]*SH_BETA[2]*SH_BETA[3]) + SH_BETA[2]*SH_BETA[6]*(P[22][0]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[3][0]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[2][0]*(sq(SH_BETA[1])*SH_BETA[3] + 1) + P[5][0]*(SH_BETA[6]*(2*q0*q1 + 2*q2*q3) + SH_BETA[1]*SH_BETA[3]*(2*q0*q2 - 2*q1*q3)) + P[4][0]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) - P[23][0]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) + P[0][0]*SH_BETA[2]*SH_BETA[6] + P[1][0]*SH_BETA[1]*SH_BETA[2]*SH_BETA[3]) + SH_BETA[1]*SH_BETA[2]*SH_BETA[3]*(P[22][1]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[3][1]*(SH_BETA[6]*SH_BETA[9] + SH_BETA[1]*SH_BETA[3]*SH_BETA[5]) - P[2][1]*(sq(SH_BETA[1])*SH_BETA[3] + 1) + P[5][1]*(SH_BETA[6]*(2*q0*q1 + 2*q2*q3) + SH_BETA[1]*SH_BETA[3]*(2*q0*q2 - 2*q1*q3)) + P[4][1]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) - P[23][1]*(SH_BETA[4] - SH_BETA[1]*SH_BETA[3]*SH_BETA[8]) + P[0][1]*SH_BETA[2]*SH_BETA[6] + P[1][1]*SH_BETA[1]*SH_BETA[2]*SH_BETA[3]));
         if (temp >= R_BETA) {
             SK_BETA[0] = 1.0f / temp;
-            //faultStatus.bad_sideslip = false;
-        } else {
-            // the calculation is badly conditioned, so we cannot perform fusion on this step
-            // we reset the covariance matrix and try again next measurement
-            //CovarianceInit();
-            //faultStatus.bad_sideslip = true;
+        } 
+        else { // Reset the estimator
+            initialiseCovariance();
             return;
         }
         SK_BETA[1] = SH_BETA[6]*(2*q0*q1 + 2*q2*q3) + SH_BETA[1]*SH_BETA[3]*(2*q0*q2 - 2*q1*q3);
@@ -170,17 +164,12 @@ void Ekf::fuseSideslip()
 		// Calculate the innovation variance
 		_beta_innov_var = 1.0f / SK_BETA[0];
 
-        // reject measurement if greater than 3-sigma inconsistency
-        if (_beta_innov > 0.5f) { //add innovation gate
-            return;
-        }
-
         // Compute the ratio of innovation to gate size
 		_beta_test_ratio = sq(_beta_innov) / (sq(fmaxf(_params.beta_innov_gate, 1.0f)) * _beta_innov_var);
 
-		// if the innocation consistency check fails then don't fuse the sample and indicate bad airspeed health
+		// if the innovation consistency check fails then don't fuse the sample and indicate bad airspeed health
 		if (_beta_test_ratio > 1.0f) {
-			//_airspeed_healthy = false;
+			_beta_healthy = false;
 			return;
 		}
 
