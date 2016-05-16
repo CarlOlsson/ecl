@@ -535,7 +535,7 @@ void Ekf::controlMagAiding()
 	}
 
 	// Determine if we want to fuse syntetic sideslip measurement
-	bool beta_fusion_time_triggered = _time_last_imu - _time_last_beta_fuse > beta_avg_ft_ms;
+	bool beta_fusion_time_triggered = _time_last_imu - _time_last_beta_fuse > _params.beta_avg_ft_ms;
 	bool beta_fusion_required = _time_last_imu - _time_last_pos_fuse > 7e6;
 	bool beta_fusion_feasible = _control_status.flags.wind;
 
