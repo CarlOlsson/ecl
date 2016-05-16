@@ -182,6 +182,9 @@ void Ekf::fuseSideslip()
 			return;
 		}
 
+        // Syntetic sideslip measurement sample has passed check so record it
+        _time_last_beta_fuse = _time_last_imu;
+
 		// Fuse syntetic sideslip measurement
 		fuse(Kfusion, _beta_innov); //Why calculate angle error when it is always zero?
 

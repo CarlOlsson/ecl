@@ -300,6 +300,7 @@ protected:
 	uint64_t _time_last_airspeed;	// timestamp of last airspeed measurement in microseconds
 	uint64_t _time_last_ext_vision; // timestamp of last external vision measurement in microseconds
 	uint64_t _time_last_optflow;
+	uint64_t _time_last_optflow;	// timestamp of last optical flow measurement in microseconds
 
 	fault_status_u _fault_status;
 

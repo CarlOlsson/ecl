@@ -69,12 +69,14 @@ Ekf::Ekf():
 	_fuse_vert_vel(false),
 	_fuse_flow(false),
 	_fuse_hagl_data(false),
+	_fuse_beta(false),
 	_time_last_fake_gps(0),
 	_time_last_pos_fuse(0),
 	_time_last_vel_fuse(0),
 	_time_last_hgt_fuse(0),
 	_time_last_of_fuse(0),
 	_time_last_arsp_fuse(0),
+	_time_last_beta_fuse(0),
 	_last_disarmed_posD(0.0f),
 	_last_dt_overrun(0.0f),
 	_airspeed_innov(0.0f),
@@ -371,6 +373,11 @@ bool Ekf::update()
 		//if (_airspeed_buffer.pop_first_older_than(_imu_sample_delayed.time_us, &_airspeed_sample_delayed)) {
 		if (false) {
 			fuseAirspeed();
+		}
+
+		if(_fuse_beta){
+			fuseSideslip();
+			_fuse_beta = false;
 		}
 	}
 

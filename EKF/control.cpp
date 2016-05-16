@@ -384,7 +384,7 @@ void Ekf::controlHeightSensorTimeouts()
 				_control_status.flags.rng_hgt = false;
 				// request a reset
 				reset_height = true;
-				printf("EKF gps hgt timeout - reset to GPS\n");
+				printf("EKF baro hgt timeout - reset to GPS\n");
 			} else {
 				// we have nothing to reset to
 				reset_height = false;
@@ -532,5 +532,14 @@ void Ekf::controlMagAiding()
 		_control_status.flags.wind = false;
 	} else {
 		_control_status.flags.wind = true;
+	}
+
+	// Determine if we want to fuse syntetic sideslip measurement
+	bool beta_fusion_time_triggered = _time_last_imu - _time_last_beta_fuse > beta_avg_ft_ms;
+	bool beta_fusion_required = _time_last_imu - _time_last_pos_fuse > 7e6;
+	bool beta_fusion_feasible = _control_status.flags.wind;
+
+	if (beta_fusion_time_triggered && beta_fusion_required && beta_fusion_feasible){
+		_fuse_beta = true;
 	}
 }
