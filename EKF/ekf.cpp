@@ -365,9 +365,8 @@ bool Ekf::update()
 			_fuse_flow = false;
 		}
 
-		// TODO This is just to get the logic inside but we will only start fusion once we tested this again
-		//if (_airspeed_buffer.pop_first_older_than(_imu_sample_delayed.time_us, &_airspeed_sample_delayed)) {
-		if (false) {
+		// Fuse true airspeed measurement
+		if (_airspeed_buffer.pop_first_older_than(_imu_sample_delayed.time_us, &_airspeed_sample_delayed)) {
 			fuseAirspeed();
 		}
 	}
