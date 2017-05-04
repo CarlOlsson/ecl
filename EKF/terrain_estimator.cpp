@@ -118,8 +118,12 @@ void Ekf::fuseHagl()
 		// calculate the innovation
 		_hagl_innov = pred_hagl - meas_hagl;
 
-		// calculate the observation variance adding the variance of the vehicles own height uncertainty
-		float obs_variance = fmaxf(P[9][9], 0.0f) + sq(_params.range_noise) + sq(_params.range_noise_scaler * _range_sample_delayed.rng);
+		// calculate the height observation variance due to vehicle position uncertainty, range measurement error and range finder tilt uncertainty
+		float range_measurement_variance = sq(_params.range_noise) * (1.0f + sq(_range_sample_delayed.rng * _params.range_noise_scaler));
+		const float tilt_angle_variance = sq(_params.range_tilt_error);
+		float obs_variance = fmaxf(P[9][9], 0.0f) // vehicle height uncertainty
+				+ range_measurement_variance * sq(_R_rng_to_earth_2_2) // range measurement error
+				+ tilt_angle_variance * sq(_range_sample_delayed.rng) * (1.0f - sq(_R_rng_to_earth_2_2)); // tilt uncertainty
 
 		// calculate the innovation variance - limiting it to prevent a badly conditioned fusion
 		_hagl_innov_var = fmaxf(_terrain_var + obs_variance, obs_variance);
