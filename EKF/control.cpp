@@ -87,10 +87,10 @@ void Ekf::controlFusionModes()
 	// calculate 2,2 element of rotation matrix from sensor frame to earth frame
 	_R_rng_to_earth_2_2 = _R_to_earth(2, 0) * _sin_tilt_rng + _R_to_earth(2, 2) * _cos_tilt_rng;
 	_range_data_ready = _range_buffer.pop_first_older_than(_imu_sample_delayed.time_us, &_range_sample_delayed)
-			&& (_R_rng_to_earth_2_2 > 0.7071f);
+			&& (_R_rng_to_earth_2_2 > _params.range_cos_max_tilt);
 
 	_flow_data_ready = _flow_buffer.pop_first_older_than(_imu_sample_delayed.time_us, &_flow_sample_delayed)
-			&&  (_R_to_earth(2, 2) > 0.7071f);
+			&&  (_R_to_earth(2, 2) > _params.range_cos_max_tilt);
 	_ev_data_ready = _ext_vision_buffer.pop_first_older_than(_imu_sample_delayed.time_us, &_ev_sample_delayed);
 	_tas_data_ready = _airspeed_buffer.pop_first_older_than(_imu_sample_delayed.time_us, &_airspeed_sample_delayed);
 
