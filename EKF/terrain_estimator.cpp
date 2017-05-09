@@ -122,7 +122,7 @@ void Ekf::fuseHagl()
 		float range_measurement_variance = sq(_params.range_noise) * (1.0f + sq(_range_sample_delayed.rng * _params.range_noise_scaler));
 		const float tilt_angle_variance = sq(_params.range_tilt_error);
 		float obs_variance = fmaxf(P[9][9], 0.0f) // vehicle height uncertainty
-				+ range_measurement_variance * sq(_R_rng_to_earth_2_2) // range measurement error
+				+ range_measurement_variance * sq(1.0f + _params.range_noise_scaler * _range_sample_delayed.rng) * sq(_R_rng_to_earth_2_2) // range measurement error
 				+ tilt_angle_variance * sq(_range_sample_delayed.rng) * (1.0f - sq(_R_rng_to_earth_2_2)); // tilt uncertainty
 
 		// calculate the innovation variance - limiting it to prevent a badly conditioned fusion
