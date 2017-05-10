@@ -239,6 +239,7 @@ struct parameters {
 	float range_noise_scaler;	// scaling from range measurement to noise (m/m)
 	float range_tilt_error;		// total tilt uncertainty in range finder alignment (rad)
 	float range_cos_max_tilt;	// cosine of the maximum tilt angle from the vertical that permits use of range finder data
+	float vehicle_variance_scaler;	// gain applied to vehicle height variance used in calculation of height above ground observation variance
 
 	// vision position fusion
 	float ev_innov_gate;		// vision estimator fusion innovation consistency gate size (STD)
@@ -353,7 +354,8 @@ struct parameters {
 		rng_sens_pitch = -1.5708f; // WINGTRA
 		range_noise_scaler = 0.0f;
 		range_tilt_error = 0.05f;
-		range_cos_max_tilt = 0.5;
+		range_cos_max_tilt = 0.5f;
+		vehicle_variance_scaler = 0.0f; // WINGTRA
 
 		// vision position fusion
 		ev_innov_gate = 5.0f;
