@@ -151,6 +151,8 @@ public:
 	// return true if the etimate is valid
 	// return the estimated terrain vertical position relative to the NED origin
 	bool get_terrain_vert_pos(float *ret);
+	void get_terrain_var(float *ret);	// WINGTRA
+	void get_meas_hagl(float *ret);	// WINGTRA
 
 	// get the accerometer bias in m/s/s
 	void get_accel_bias(float bias[3]);

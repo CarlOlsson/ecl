@@ -163,6 +163,19 @@ bool Ekf::get_terrain_vert_pos(float *ret)
 	}
 }
 
+// WINGTRA
+void Ekf::get_terrain_var(float *ret)
+{
+	memcpy(ret, &_terrain_var, sizeof(float));
+}
+
+// WINGTRA
+void Ekf::get_meas_hagl(float *ret)
+{
+	float meas_hagl = _range_sample_delayed.rng * _R_rng_to_earth_2_2;
+	memcpy(ret, &meas_hagl, sizeof(float));
+}
+
 void Ekf::get_hagl_innov(float *hagl_innov)
 {
 	memcpy(hagl_innov, &_hagl_innov, sizeof(_hagl_innov));
