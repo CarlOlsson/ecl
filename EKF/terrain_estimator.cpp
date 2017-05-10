@@ -163,25 +163,17 @@ bool Ekf::get_terrain_vert_pos(float *ret)
 	}
 }
 
-// return true if the estimate is fresh
-// return the estimated vertical position of the terrain relative to the NED origin
-bool Ekf::get_terrain_var(float *ret)
+// WINGTRA
+void Ekf::get_terrain_var(float *ret)
 {
 	memcpy(ret, &_terrain_var, sizeof(float));
-
-	if (_terrain_initialised && _range_data_continuous) {
-		return true;
-
-	} else {
-		return false;
-	}
 }
 
-bool Ekf::get_meas_hagl(float *ret)
+// WINGTRA
+void Ekf::get_meas_hagl(float *ret)
 {
 	float meas_hagl = _range_sample_delayed.rng * _R_rng_to_earth_2_2;
 	memcpy(ret, &meas_hagl, sizeof(float));
-	return true;
 }
 
 void Ekf::get_hagl_innov(float *hagl_innov)
