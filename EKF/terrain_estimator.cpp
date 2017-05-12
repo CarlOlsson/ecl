@@ -47,7 +47,7 @@ bool Ekf::initHagl()
 	// get most recent range measurement from buffer
 	rangeSample latest_measurement = _range_buffer.get_newest();
 
-	if ((_time_last_imu - latest_measurement.time_us) < 2e5 && _R_rng_to_earth_2_2 > 0.7071f) {
+	if ((_time_last_imu - latest_measurement.time_us) < 2e5 && _R_rng_to_earth_2_2 > _params.range_cos_max_tilt) {
 		// if we have a fresh measurement, use it to initialise the terrain estimator
 		_terrain_vpos = _state.pos(2) + latest_measurement.rng * _R_rng_to_earth_2_2;
 		// initialise state variance to variance of measurement
@@ -108,7 +108,7 @@ void Ekf::runTerrainEstimator()
 void Ekf::fuseHagl()
 {
 	// If the vehicle is excessively tilted, do not try to fuse range finder observations
-	if (_R_rng_to_earth_2_2 > 0.7071f) {
+	if (_R_rng_to_earth_2_2 > _params.range_cos_max_tilt) {
 		// get a height above ground measurement from the range finder assuming a flat earth
 		float meas_hagl = _range_sample_delayed.rng * _R_rng_to_earth_2_2;
 
@@ -118,8 +118,12 @@ void Ekf::fuseHagl()
 		// calculate the innovation
 		_hagl_innov = pred_hagl - meas_hagl;
 
-		// calculate the observation variance adding the variance of the vehicles own height uncertainty
-		float obs_variance = fmaxf(P[9][9], 0.0f) + sq(_params.range_noise) + sq(_params.range_noise_scaler * _range_sample_delayed.rng);
+		// calculate the height observation variance due to vehicle position uncertainty, range measurement error and range finder tilt uncertainty
+		float range_measurement_variance = sq(_params.range_noise) * (1.0f + sq(_range_sample_delayed.rng * _params.range_noise_scaler));
+		const float tilt_angle_variance = sq(_params.range_tilt_error);
+		float obs_variance = fmaxf(P[9][9] * _params.vehicle_variance_scaler, 0.0f) // vehicle height uncertainty
+				+ range_measurement_variance * sq(_R_rng_to_earth_2_2) // range measurement error
+				+ tilt_angle_variance * sq(_range_sample_delayed.rng) * (1.0f - sq(_R_rng_to_earth_2_2)); // tilt uncertainty
 
 		// calculate the innovation variance - limiting it to prevent a badly conditioned fusion
 		_hagl_innov_var = fmaxf(_terrain_var + obs_variance, obs_variance);
