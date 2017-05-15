@@ -188,7 +188,7 @@ public:
 	// return the estimated terrain vertical position relative to the NED origin
 	virtual bool get_terrain_vert_pos(float *ret) = 0;
 	virtual void get_terrain_var(float *ret) = 0;	// WINGTRA
-	virtual void get_meas_hagl(float *ret) = 0;	// WINGTRA
+	virtual void get_R_rng_to_earth_2_2(float *ret) = 0;	// WINGTRA
 
 	// return true if the local position estimate is valid
 	bool local_position_is_valid();
