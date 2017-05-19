@@ -45,8 +45,17 @@
 
 class __EXPORT DataValidatorGroup {
 public:
+	/**
+	 * @param siblings initial number of DataValidator's. Must be > 0.
+	 */
 	DataValidatorGroup(unsigned siblings);
 	virtual ~DataValidatorGroup();
+
+	/**
+	 * Create a new Validator (with index equal to the number of currently existing validators)
+	 * @return the newly created DataValidator or nullptr on error
+	 */
+	DataValidator *add_new_validator();
 
 	/**
 	 * Put an item into the validator group.
@@ -113,10 +122,11 @@ public:
 	 *
 	 * @param timeout_interval_us The timeout interval in microseconds
 	 */
-	void			set_timeout(uint64_t timeout_interval_us);
+	void			set_timeout(uint32_t timeout_interval_us);
 
 private:
 	DataValidator *_first;		/**< sibling in the group */
+	uint32_t _timeout_interval_us; /**< currently set timeout */
 	int _curr_best;		/**< currently best index */
 	int _prev_best;		/**< the previous best index */
 	uint64_t _first_failover_time;	/**< timestamp where the first failover occured or zero if none occured */
