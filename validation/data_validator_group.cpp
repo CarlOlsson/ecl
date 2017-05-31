@@ -56,15 +56,31 @@ DataValidatorGroup::DataValidatorGroup(unsigned siblings) :
 	}
 
 	_first = next;
+	_timeout_interval_us = _first->get_timeout();
 }
 
 DataValidatorGroup::~DataValidatorGroup()
 {
+	while (_first) {
+		DataValidator* next = _first->sibling();
+		delete (_first);
+		_first = next;
+	}
+}
 
+DataValidator *DataValidatorGroup::add_new_validator()
+{
+	DataValidator *validator = new DataValidator(_first);
+	if (!validator) {
+		return nullptr;
+	}
+	_first = validator;
+	_first->set_timeout(_timeout_interval_us);
+	return _first;
 }
 
 void
-DataValidatorGroup::set_timeout(uint64_t timeout_interval_us)
+DataValidatorGroup::set_timeout(uint32_t timeout_interval_us)
 {
 	DataValidator *next = _first;
 
@@ -72,6 +88,7 @@ DataValidatorGroup::set_timeout(uint64_t timeout_interval_us)
 		next->set_timeout(timeout_interval_us);
 		next = next->sibling();
 	}
+	_timeout_interval_us = timeout_interval_us;
 }
 
 void
