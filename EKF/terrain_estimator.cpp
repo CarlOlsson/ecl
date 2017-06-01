@@ -176,7 +176,7 @@ void Ekf::get_terrain_var(float *ret)
 // WINGTRA
 void Ekf::get_R_rng_to_earth_2_2(float *ret)
 {
-	memcpy(ret, &_R_rng_to_earth_2_2, sizeof(float));
+	memcpy(ret, &_R_rng_to_earth_2_2_now, sizeof(float));
 }
 
 void Ekf::get_hagl_innov(float *hagl_innov)
