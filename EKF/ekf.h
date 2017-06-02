@@ -152,7 +152,7 @@ public:
 	// return the estimated terrain vertical position relative to the NED origin
 	bool get_terrain_vert_pos(float *ret);
 	void get_terrain_var(float *ret);	// WINGTRA
-	void get_meas_hagl(float *ret);	// WINGTRA
+	void get_R_rng_to_earth_2_2(float *ret);	// WINGTRA
 
 	// get the accerometer bias in m/s/s
 	void get_accel_bias(float bias[3]);
@@ -339,6 +339,7 @@ private:
 	float _sin_tilt_rng;		// sine of the range finder tilt rotation about the Y body axis
 	float _cos_tilt_rng;		// cosine of the range finder tilt rotation about the Y body axis
 	float _R_rng_to_earth_2_2;	// 2,2 element of the rotation matrix from sensor frame to earth frame
+	float _R_rng_to_earth_2_2_now;	// WINGTRA: 2,2 element of the rotation matrix from sensor frame to earth frame at the current time
 	bool _range_data_continuous;	// true when we are receiving range finder data faster than a 2Hz average
 	float _dt_last_range_update_filt_us;	// filtered value of the delta time elapsed since the last range measurement came into
 						// the filter (microseconds)
