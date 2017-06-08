@@ -352,11 +352,14 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 		matrix::Dcm<float> R_to_earth(euler321);
 
 		// calculate the observed yaw angle
-		if (_params.fusion_mode & MASK_USE_EVYAW) {
+		if (_params.fusion_mode & MASK_USE_EVYAW ) {
 			// convert the observed quaternion to a rotation matrix
 			matrix::Dcm<float> R_to_earth_ev(_ev_sample_delayed.quat);	// transformation matrix from body to world frame
 			// calculate the yaw angle for a 312 sequence
 			euler321(2) = atan2f(R_to_earth_ev(1, 0) , R_to_earth_ev(0, 0));
+		} else if ((_params.mag_field_vertical == 1) || (_params.mag_field_vertical == 2)) {
+			// force use of the parameter defined yaw angle
+			euler321(2) = math::radians(_params.mag_yaw_ground);
 		} else {
 			// rotate the magnetometer measurements into earth frame using a zero yaw angle
 			Vector3f mag_earth_pred = R_to_earth * _mag_sample_delayed.mag;
@@ -406,6 +409,9 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 			matrix::Dcm<float> R_to_earth_ev(_ev_sample_delayed.quat);	// transformation matrix from body to world frame
 			// calculate the yaw angle for a 312 sequence
 			euler312(0) = atan2f(-R_to_earth_ev(0, 1) , R_to_earth_ev(1, 1));
+		} else if ((_params.mag_field_vertical == 1) || (_params.mag_field_vertical == 2)) {
+			// force use of the parameter defined yaw angle
+			euler312(0) = math::radians(_params.mag_yaw_ground);
 		} else {
 			// rotate the magnetometer measurements into earth frame using a zero yaw angle
 			Vector3f mag_earth_pred = R_to_earth * _mag_sample_delayed.mag;
