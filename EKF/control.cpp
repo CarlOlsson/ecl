@@ -869,7 +869,7 @@ void Ekf::controlMagFusion()
 			bool use_3D_fusion = _control_status.flags.tilt_align &&
 					_control_status.flags.in_air &&
 					(_control_status.flags.mag_3D || height_achieved) &&
-					!(_params.mag_field_vertical != 1); // don't use if explicitly prohibited by parameter setting
+					!(_params.mag_field_vertical == 1); // don't use if explicitly prohibited by parameter setting
 
 			// Earth field is too close to vertical to be able to use the horizontal projection for yaw estimation
 			bool in_air_mag_hdg_prohibited = ((_params.mag_field_vertical == 1) || (_params.mag_field_vertical == 2));
