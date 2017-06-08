@@ -465,14 +465,16 @@ void Ekf::fuseHeading()
 		matrix::Dcm<float> R_to_earth(euler321);
 
 		// calculate the observed yaw angle
-		if (((_params.mag_field_vertical == 1) || (_params.mag_field_vertical == 2)) && !_control_status.flags.in_air) {
-			// use the parameter specified yaw angle when on ground if the earth field inclination is too close to vertical
-			measured_hdg = math::radians(_params.mag_yaw_ground);
-		} else if (_control_status.flags.mag_hdg) {
-			// rotate the magnetometer measurements into earth frame using a zero yaw angle
-			mag_earth_pred = R_to_earth * _mag_sample_delayed.mag;
-			// the angle of the projection onto the horizontal gives the yaw angle
-			measured_hdg = -atan2f(mag_earth_pred(1), mag_earth_pred(0)) + _mag_declination;
+		if (_control_status.flags.mag_hdg) {
+			if ((_params.mag_field_vertical == 1) || (_params.mag_field_vertical == 2)) {
+				// use the parameter specified yaw angle when on ground if the earth field inclination is too close to vertical
+				measured_hdg = math::radians(_params.mag_yaw_ground);
+			} else {
+				// rotate the magnetometer measurements into earth frame using a zero yaw angle
+				mag_earth_pred = R_to_earth * _mag_sample_delayed.mag;
+				// the angle of the projection onto the horizontal gives the yaw angle
+				measured_hdg = -atan2f(mag_earth_pred(1), mag_earth_pred(0)) + _mag_declination;
+			}
 		} else if (_control_status.flags.ev_yaw) {
 			// convert the observed quaternion to a rotation matrix
 			matrix::Dcm<float> R_to_earth_ev(_ev_sample_delayed.quat);	// transformation matrix from body to world frame
@@ -546,14 +548,16 @@ void Ekf::fuseHeading()
 		R_to_earth(2, 1) = s1;
 
 		// calculate the observed yaw angle
-		if (((_params.mag_field_vertical == 1) || (_params.mag_field_vertical == 2)) && !_control_status.flags.in_air) {
-			// use the parameter specified yaw angle when on ground if the earth field inclination is too close to vertical
-			measured_hdg = math::radians(_params.mag_yaw_ground);
-		} else if (_control_status.flags.mag_hdg) {
-			// rotate the magnetometer measurements into earth frame using a zero yaw angle
-			mag_earth_pred = R_to_earth * _mag_sample_delayed.mag;
-			// the angle of the projection onto the horizontal gives the yaw angle
-			measured_hdg = -atan2f(mag_earth_pred(1), mag_earth_pred(0)) + _mag_declination;
+		if (_control_status.flags.mag_hdg) {
+			if ((_params.mag_field_vertical == 1) || (_params.mag_field_vertical == 2)) {
+				// use the parameter specified yaw angle when on ground if the earth field inclination is too close to vertical
+				measured_hdg = math::radians(_params.mag_yaw_ground);
+			} else {
+				// rotate the magnetometer measurements into earth frame using a zero yaw angle
+				mag_earth_pred = R_to_earth * _mag_sample_delayed.mag;
+				// the angle of the projection onto the horizontal gives the yaw angle
+				measured_hdg = -atan2f(mag_earth_pred(1), mag_earth_pred(0)) + _mag_declination;
+			}
 		} else if (_control_status.flags.ev_yaw) {
 			// convert the observed quaternion to a rotation matrix
 			matrix::Dcm<float> R_to_earth_ev(_ev_sample_delayed.quat);	// transformation matrix from body to world frame
