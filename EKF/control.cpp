@@ -895,7 +895,7 @@ void Ekf::controlMagFusion()
 				_control_status.flags.mag_3D = false;
 
 			} else {
-				// use heading fusion when on the ground
+				// we cannot fuse any data
 				_control_status.flags.mag_hdg = false;
 				_control_status.flags.mag_3D = false;
 
