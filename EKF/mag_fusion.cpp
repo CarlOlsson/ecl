@@ -441,8 +441,8 @@ void Ekf::fuseHeading()
 		if (_control_status.flags.mag_hdg) {
 			if ((_params.mag_field_vertical == 1) || (_params.mag_field_vertical == 2)) {
 				if (!_control_status.flags.in_air) {
-					// use the parameter specified yaw angle when on ground if the earth field inclination is too close to vertical
-					measured_hdg = math::radians(_params.mag_yaw_ground);
+					// use the last known good yaw angle
+					measured_hdg = _last_inflight_yaw;
 				} else {
 					// use the current heading so that the innovation is zero
 					// this can be used if the yaw variance has become too large
@@ -530,8 +530,8 @@ void Ekf::fuseHeading()
 		if (_control_status.flags.mag_hdg) {
 			if ((_params.mag_field_vertical == 1) || (_params.mag_field_vertical == 2)) {
 				if (!_control_status.flags.in_air) {
-					// use the parameter specified yaw angle when on ground if the earth field inclination is too close to vertical
-					measured_hdg = math::radians(_params.mag_yaw_ground);
+					// use the last known good yaw angle
+					measured_hdg = _last_inflight_yaw;
 				} else {
 					// use the current heading so that the innovation is zero
 					// this can be used if the yaw variance has become too large
