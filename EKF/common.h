@@ -221,6 +221,10 @@ struct parameters {
 	float mag_innov_gate;		// magnetometer fusion innovation consistency gate size (STD)
 	int mag_declination_source;	// bitmask used to control the handling of declination data
 	int mag_fusion_type;		// integer used to specify the type of magnetometer fusion used
+	int mag_field_vertical;		// set to 1 or 2 when the earth field is too close to vertical to give reliable heading.
+					// A value of 1 will fuse in a specified yaw angle when on the ground and do no yaw or mag fusion in air.
+					// A value of 2 will fuse in a specified yaw angle when on the ground and do 3-axis mag fusion in the air.
+	float mag_yaw_ground;		// This yaw angle willbe use dfor alignment and fusion when on the ground if mag_field_vertical = 1 or 2 (deg)
 
 	// airspeed fusion
 	float tas_innov_gate;		// True Airspeed Innovation consistency gate size in standard deciation
@@ -337,6 +341,8 @@ struct parameters {
 		mag_innov_gate = 3.0f;
 		mag_declination_source = 7;
 		mag_fusion_type = 3; // WINGTRA
+		mag_field_vertical = 1; // WINGTRA set to 1 or 2 for Greenland trials only, otherwise should be 0
+		mag_yaw_ground = 0.0f;
 
 		// airspeed fusion
 		tas_innov_gate = 5.0f;		
