@@ -151,7 +151,7 @@ void Ekf::fuseMag()
 			healthy = false;
 			_innov_check_fail_status.value |= (1 << (index + 3));
 		} else {
-			_innov_check_fail_status.value &= !(1 << (index + 3));
+			_innov_check_fail_status.value &= ~(1 << (index + 3));
 		}
 	}
 
