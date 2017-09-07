@@ -401,7 +401,7 @@ struct parameters {
 		acc_bias_learn_tc = 0.5f;
 
 		// dead reckoning timers
-		no_gps_timeout_max = 7e6;
+		no_gps_timeout_max = 4e6;
 		no_aid_timeout_max = 1e6;
 
 	}
