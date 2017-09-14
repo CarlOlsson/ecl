@@ -384,14 +384,12 @@ bool Ekf::realignYawGPS()
 				euler321(2) += courseYawError;
 				_flt_mag_align_complete = true;
 
-			} else if (_control_status.flags.wind) {
-				// we have previously aligned yaw in-flight and have wind estimates so set the yaw such that the vehicle nose is
-				// aligned with the wind relative GPS velocity vector
-				euler321(2) = atan2f((_gps_sample_delayed.vel(1) - _state.wind_vel(1)) , (_gps_sample_delayed.vel(0) - _state.wind_vel(0)));
-
 			} else {
-				// we don't have wind estimates, so align yaw to the GPS velocity vector
 				euler321(2) = atan2f(_gps_sample_delayed.vel(1) , _gps_sample_delayed.vel(0));
+
+				// Reset the wind states since they have probably learned faulty estimates 
+				resetWindStates();
+				resetWindCovariance();
 
 			}
 
