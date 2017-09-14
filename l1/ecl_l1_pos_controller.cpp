@@ -320,12 +320,26 @@ void ECL_L1_Pos_Controller::navigate_loiter(const math::Vector<2> &vector_A,
 
 	} else {
 		/* calculate L1 bearing */
-		// Use cosine law to calculate gamma, the angle between the connection to the midpoint of the circle and the intersection of l1 with the circle
-		float cos_gam = (_L1_distance * _L1_distance + (dist_to_circle + radius) * (dist_to_circle + radius) - radius * radius)
-				/ 2.0f / _L1_distance / (dist_to_circle + radius);
-		cos_gam = math::constrain(cos_gam, -1.0f, 1.0f);
-		float gam = acosf_protected(cos_gam);
-		_nav_bearing = _wrap_pi(atan2f(-vector_A_to_airplane(1), -vector_A_to_airplane(0)) - float(loiter_direction) * gam);
+		/* WINGTRA: fly to tangent: calculate the angle between the connection to the midpoint and the circle tangent. then add it to the already
+		computed target bearing (to circle center) */
+		if (dist_to_circle > 0.33f * radius) {
+			_nav_bearing = _wrap_pi(asinf_protected(-float(loiter_direction) * math::constrain(radius / (radius + dist_to_circle), -1.0f, 1.0f))
+				+ _target_bearing);
+			float cos_gam = (_L1_distance * _L1_distance + (dist_to_circle + radius) * (dist_to_circle + radius) - radius * radius)
+					/ 2.0f / _L1_distance / (dist_to_circle + radius);
+			cos_gam = math::constrain(cos_gam, -1.0f, 1.0f);
+			float gam = acosf_protected(cos_gam);
+			warnx("difference: %2.2f, %2.2f, %2.2f", (double)_nav_bearing, (double)_wrap_pi(atan2f(-vector_A_to_airplane(1), -vector_A_to_airplane(0)) - float(loiter_direction) * gam), (double)dist_to_circle);	
+		/* WINGTRA END */
+
+		} else {
+			// Use cosine law to calculate gamma, the angle between the connection to the midpoint of the circle and the intersection of l1 with the circle
+			float cos_gam = (_L1_distance * _L1_distance + (dist_to_circle + radius) * (dist_to_circle + radius) - radius * radius)
+					/ 2.0f / _L1_distance / (dist_to_circle + radius);
+			cos_gam = math::constrain(cos_gam, -1.0f, 1.0f);
+			float gam = acosf_protected(cos_gam);
+			_nav_bearing = _wrap_pi(atan2f(-vector_A_to_airplane(1), -vector_A_to_airplane(0)) - float(loiter_direction) * gam);
+		}
 
 		/* estimate wind */ //NOTE: this assumes no sideslip
 
