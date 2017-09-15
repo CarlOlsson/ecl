@@ -175,6 +175,9 @@ public:
 	// set vehicle landed status data
 	void set_in_air_status(bool in_air) {_control_status.flags.in_air = in_air;}
 
+	// set vehicle is fixed wing status
+	void set_is_fixed_wing(bool is_fixed_wing) {_control_status.flags.fixed_wing = is_fixed_wing;}
+
 	// set flag if synthetic sideslip measurement should be fused
 	void set_fuse_beta_flag(bool fuse_beta) {_control_status.flags.fuse_beta = fuse_beta;}
 
@@ -241,7 +244,7 @@ public:
 	virtual void get_gyro_bias(float bias[3]) = 0;
 
 	// get EKF mode status
-	void get_control_mode(uint16_t *val)
+	void get_control_mode(uint32_t *val)
 	{
 		*val = _control_status.value;
 	}

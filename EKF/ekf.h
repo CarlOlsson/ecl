@@ -320,7 +320,9 @@ private:
 	float _baro_hgt_offset;		// baro height reading at the local NED origin (m)
 
 	// Variables used to control activation of post takeoff functionality
-	float _last_on_ground_posD; // last vertical position when the in_air status was false (m)
+	float _last_on_ground_posD;		// last vertical position when the in_air status was false (m)
+	uint8_t _num_bad_flight_yaw_events{0};	// number of times a bad heading has been detected in flight and required a yaw reset
+	bool _flt_mag_align_complete{true};	// true when the in-flight mag field alignment has been completed
 
 	gps_check_fail_status_u _gps_check_fail_status{};
 
@@ -409,6 +411,10 @@ private:
 	// reset the heading and magnetic field states using the declination and magnetometer measurements
 	// return true if successful
 	bool resetMagHeading(Vector3f &mag_init);
+
+	// Do a forced re-alignment of the yaw angle to align with the horizontal velocity vector from the GPS.
+	// It is used to align the yaw angle after launch or takeoff for fixed wing vehicle.
+	bool realignYawGPS();
 
 	// calculate the magnetic declination to be used by the alignment and fusion processing
 	void calcMagDeclination();
