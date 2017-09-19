@@ -322,13 +322,13 @@ void ECL_L1_Pos_Controller::navigate_loiter(const math::Vector<2> &vector_A,
 		/* calculate L1 bearing */
 		/* WINGTRA: fly to tangent: if far away, calculate the angle between the connection to the midpoint and the circle tangent. then add it to the already
 		computed target bearing (to circle center) */
-		if (sqrtf((radius + dist_to_circle) * (radius + dist_to_circle) - radius * radius) > _L1_distance) {
-			// Head directly to the tangent point
+		if ((radius + dist_to_circle) * (radius + dist_to_circle) - radius * radius > _L1_distance * _L1_distance) {
+			/* Head directly to the tangent point */
 			_nav_bearing = _wrap_pi(asinf_protected(-float(loiter_direction) * math::constrain(radius / (radius + dist_to_circle), -1.0f, 1.0f))
 				+ _target_bearing);
-		/* WINGTRA END */
 
 		} else {
+		/* WINGTRA END */
 			// Use cosine law to calculate gamma, the angle between the connection to the midpoint of the circle and the intersection of l1 with the circle
 			float cos_gam = (_L1_distance * _L1_distance + (dist_to_circle + radius) * (dist_to_circle + radius) - radius * radius)
 					/ 2.0f / _L1_distance / (dist_to_circle + radius);
