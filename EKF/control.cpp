@@ -391,9 +391,14 @@ void Ekf::controlGpsFusion()
 
 			if (do_reset) {
 				// Reset states to the last GPS measurement
-				resetPosition();
-				resetVelocity();
-				ECL_WARN("EKF GPS fusion timeout - reset to GPS");
+				if (_control_status.flags.fixed_wing) {
+					// if flying a fixed wing aircraft, do a complete reset that includes yaw, velocity and position
+					realignYawGPS();
+				} else {
+					resetVelocity();
+					resetPosition();
+					ECL_WARN("EKF GPS fusion timeout - reset to GPS");
+				}
 
 				// Reset the timeout counters
 				_time_last_pos_fuse = _time_last_imu;
@@ -828,7 +833,7 @@ void Ekf::controlBetaFusion()
 		if (!_control_status.flags.wind) {
 			// activate the wind states
 			_control_status.flags.wind = true;
-			// reset the timout timers to prevent repeated resets
+			// reset the timeout timers to prevent repeated resets
 			_time_last_beta_fuse = _time_last_imu;
 			_time_last_arsp_fuse = _time_last_imu;
 			// reset the wind speed states and corresponding covariances
@@ -853,15 +858,20 @@ void Ekf::controlMagFusion()
 	// If we are on ground, store the local position and time to use as a reference
 	if (!_control_status.flags.in_air) {
 		_last_on_ground_posD = _state.pos(2);
-
+		_flt_mag_align_complete = false;
+		_num_bad_flight_yaw_events = 0;
 	}
 
-	// checs for new magnetometer data tath has fallen beind the fusion time horizon
+	// check for new magnetometer data that has fallen behind the fusion time horizon
 	if (_mag_data_ready) {
 
 		// Determine if we should use simple magnetic heading fusion which works better when there are large external disturbances
 		// or the more accurate 3-axis fusion
-		if (_params.mag_fusion_type == MAG_FUSE_TYPE_AUTO || _params.mag_fusion_type == MAG_FUSE_TYPE_AUTOFW) {
+		if (_control_status.flags.mag_fault) {
+			// do no magnetometer fusion at all
+			_control_status.flags.mag_hdg = false;
+			_control_status.flags.mag_3D = false;
+		} else if (_params.mag_fusion_type == MAG_FUSE_TYPE_AUTO || _params.mag_fusion_type == MAG_FUSE_TYPE_AUTOFW) {
 			// start 3D fusion if in-flight and height has increased sufficiently
 			// to be away from ground magnetic anomalies
 			// don't switch back to heading fusion until we are back on the ground
@@ -881,13 +891,20 @@ void Ekf::controlMagFusion()
 
 			if (use_3D_fusion) {
 				// if transitioning into 3-axis fusion mode, we need to initialise the yaw angle and field states
-				if (!_control_status.flags.mag_3D) {
-					_control_status.flags.yaw_align = resetMagHeading(_mag_sample_delayed.mag);
+				if (!_control_status.flags.mag_3D && !_flt_mag_align_complete) {
+					// If we are flying a vehicle that flies forward, eg plane, then we can use the GPS course to check and correct the heading
+					if (_control_status.flags.fixed_wing && _control_status.flags.in_air) {
+						_control_status.flags.yaw_align = realignYawGPS();
+						_flt_mag_align_complete = _control_status.flags.yaw_align;
+					} else {
+						_control_status.flags.yaw_align = resetMagHeading(_mag_sample_delayed.mag);
+						_flt_mag_align_complete = _control_status.flags.yaw_align;
+					}
 				}
 
-				// use 3D mag fusion when airborne
-				_control_status.flags.mag_hdg = false;
-				_control_status.flags.mag_3D = true;
+				// only use one type of mag fusion at the same time
+				_control_status.flags.mag_3D = _flt_mag_align_complete;
+				_control_status.flags.mag_hdg = !_control_status.flags.mag_3D;
 
 			} else if (use_hdg_fusion) {
 				// use heading fusion when on the ground
