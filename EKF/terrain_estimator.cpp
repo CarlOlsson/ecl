@@ -93,7 +93,7 @@ void Ekf::runTerrainEstimator()
 		_terrain_var = math::constrain(_terrain_var, 0.0f, 1e4f);
 
 		// Fuse range finder data if available
-		if (_range_data_ready) {
+		if (_range_data_ready && !_rng_stuck) {
 			fuseHagl();
 
 			// update range sensor angle parameters in case they have changed
@@ -165,7 +165,8 @@ bool Ekf::get_terrain_vert_pos(float *ret)
 {
 	memcpy(ret, &_terrain_vpos, sizeof(float));
 
-	if (_terrain_initialised && _range_data_continuous && !_innov_check_fail_status.flags.reject_hagl) {
+	if (_terrain_initialised && _range_data_continuous && !_rng_stuck &&
+		  !_innov_check_fail_status.flags.reject_hagl) {
 		return true;
 
 	} else {
