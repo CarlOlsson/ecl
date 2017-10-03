@@ -189,6 +189,9 @@ public:
 	// return true if the EKF is dead reckoning the position using inertial data only
 	virtual bool inertial_dead_reckoning() = 0;
 
+	// WINGTRA: return true if velocity test ratio is < 1
+	virtual bool vel_is_rejected() = 0;
+
 	// return true if the estimate is valid
 	// return the estimated terrain vertical position relative to the NED origin
 	virtual bool get_terrain_vert_pos(float *ret) = 0;

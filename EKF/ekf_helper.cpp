@@ -1091,6 +1091,12 @@ bool Ekf::inertial_dead_reckoning()
 	return !velPosAiding && !optFlowAiding && !airDataAiding;
 }
 
+// WINGTRA: return true if velocity test ratio is < 1
+bool Ekf::vel_is_rejected()
+{
+	return _innov_check_fail_status.value & 1;
+}
+
 // perform a vector cross product
 Vector3f EstimatorInterface::cross_product(const Vector3f &vecIn1, const Vector3f &vecIn2)
 {
