@@ -83,6 +83,7 @@ Ekf::Ekf():
 	_time_last_of_fuse(0),
 	_time_last_arsp_fuse(0),
 	_time_last_beta_fuse(0),
+	_time_last_rng_ready(0),
 	_last_disarmed_posD(0.0f),
 	_imu_collection_time_adj(0.0f),
 	_time_acc_bias_check(0.0f),
@@ -124,6 +125,9 @@ Ekf::Ekf():
 	_gps_hgt_faulty(false),
 	_rng_hgt_faulty(false),
 	_primary_hgt_source(VDIST_SENSOR_BARO),
+	_rng_stuck(false),
+	_rng_check_min_val(0.0f),
+	_rng_check_max_val(0.0f),
 	_time_bad_vert_accel(0)
 {
 	_state = {};

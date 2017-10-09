@@ -256,6 +256,7 @@ private:
 	uint64_t _time_last_of_fuse;    // time the last fusion of optical flow measurements were performed (usec)
 	uint64_t _time_last_arsp_fuse;	// time the last fusion of airspeed measurements were performed (usec)
 	uint64_t _time_last_beta_fuse;	// time the last fusion of synthetic sideslip measurements were performed (usec)
+	uint64_t _time_last_rng_ready;	// time the last range finder measurement was ready (uSec)
 	Vector2f _last_known_posNE;     // last known local NE position vector (m)
 	float _last_disarmed_posD;      // vertical position recorded at arming (m)
 	float _imu_collection_time_adj;	// the amount of time the IMU collection needs to be advanced to meet the target set by FILTER_UPDATE_PERIOD_MS (sec)
@@ -357,6 +358,11 @@ private:
 	bool _gps_hgt_faulty;		// true if valid gps height data is unavailable for use
 	bool _rng_hgt_faulty;		// true if valid rnage finder height data is unavailable for use
 	int _primary_hgt_source;	// priary source of height data set at initialisation
+
+	// variables used to check for "stuck" rng data
+	bool _rng_stuck;		// true when rng data wasn't ready for more than 10s and new rng values haven't changed enough
+	float _rng_check_min_val;		// minimum value for new rng measurement when being stuck
+	float _rng_check_max_val;		// maximum value for new rng measurement when being stuck
 
 	// imu fault status
 	uint64_t _time_bad_vert_accel;	// last time a bad vertical accel was detected (usec)
@@ -485,6 +491,9 @@ private:
 
 	// control for height sensor timeouts, sensor changes and state resets
 	void controlHeightSensorTimeouts();
+
+	// check for "stuck" range finder measurements when rng was not valid for certain period
+	void checkForStuckRange();
 
 	// return the square of two floating point numbers - used in auto coded sections
 	inline float sq(float var)

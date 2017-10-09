@@ -93,7 +93,7 @@ void Ekf::runTerrainEstimator()
 		_terrain_var = math::constrain(_terrain_var, 0.0f, 1e4f);
 
 		// Fuse range finder data if available
-		if (_range_data_ready) {
+		if (_range_data_ready && !_rng_stuck) {
 			fuseHagl();
 
 			// update range sensor angle parameters in case they have changed
@@ -101,6 +101,11 @@ void Ekf::runTerrainEstimator()
 			_sin_tilt_rng = sinf(_params.rng_sens_pitch);
 			_cos_tilt_rng = cosf(_params.rng_sens_pitch);
 
+		}
+
+		//constrain _terrain_vpos to be a minimum of _params.rng_gnd_clearance larger than _state.pos(2)
+		if (_terrain_vpos - _state.pos(2) < _params.rng_gnd_clearance) {
+			_terrain_vpos = _params.rng_gnd_clearance + _state.pos(2);
 		}
 	}
 }
@@ -149,6 +154,7 @@ void Ekf::fuseHagl()
 		}
 
 	} else {
+		_innov_check_fail_status.flags.reject_hagl = true;
 		return;
 	}
 }
@@ -159,7 +165,8 @@ bool Ekf::get_terrain_vert_pos(float *ret)
 {
 	memcpy(ret, &_terrain_vpos, sizeof(float));
 
-	if (_terrain_initialised && _range_data_continuous) {
+	if (_terrain_initialised && _range_data_continuous && !_rng_stuck &&
+		  !_innov_check_fail_status.flags.reject_hagl) {
 		return true;
 
 	} else {
