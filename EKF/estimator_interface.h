@@ -93,6 +93,8 @@ public:
 
 	virtual void get_wind_velocity(float *wind) = 0;
 
+	virtual void get_wind_velocity_var(float *wind_var) = 0;
+
 	virtual void get_covariances(float *covariances) = 0;
 
 	// gets the variances for the NED velocity states
@@ -186,6 +188,9 @@ public:
 
 	// return true if the EKF is dead reckoning the position using inertial data only
 	virtual bool inertial_dead_reckoning() = 0;
+
+	// WINGTRA: return true if velocity test ratio is < 1
+	virtual bool vel_is_rejected() = 0;
 
 	// return true if the estimate is valid
 	// return the estimated terrain vertical position relative to the NED origin

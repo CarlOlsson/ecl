@@ -106,6 +106,9 @@ public:
 	// get the wind velocity in m/s
 	void get_wind_velocity(float *wind);
 
+	// get the wind velocity var
+	void get_wind_velocity_var(float *wind_var);
+
 	// get the diagonal elements of the covariance matrix
 	void get_covariances(float *covariances);
 
@@ -147,6 +150,9 @@ public:
 
 	// return true if the EKF is dead reckoning the position using inertial data only
 	bool inertial_dead_reckoning();
+
+	// WINGTRA: return true if velocity test ratio is < 1
+	bool vel_is_rejected();
 
 	// return true if the etimate is valid
 	// return the estimated terrain vertical position relative to the NED origin

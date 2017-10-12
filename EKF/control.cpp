@@ -816,6 +816,8 @@ void Ekf::controlAirDataFusion()
         if (_control_status.flags.wind && airspeed_timed_out && sideslip_timed_out) {
                 // if the airspeed or sideslip measurements have timed out for 10 seconds we declare the wind estimate to be invalid
 		_control_status.flags.wind = false;
+		_state.wind_vel(0) = 0.0f;
+		_state.wind_vel(1) = 0.0f;
 
 	}
 
