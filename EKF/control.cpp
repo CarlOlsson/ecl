@@ -401,8 +401,9 @@ void Ekf::controlGpsFusion()
 				} else {
 					resetVelocity();
 					resetPosition();
-					ECL_WARN("EKF GPS fusion timeout - reset to GPS");
 				}
+
+				ECL_WARN("EKF GPS fusion timeout - reset to GPS");
 
 				// Reset the timeout counters
 				_time_last_pos_fuse = _time_last_imu;
