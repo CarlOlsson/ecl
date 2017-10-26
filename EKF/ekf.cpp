@@ -233,12 +233,11 @@ bool Ekf::update()
 		_dt_update = t_prev != 0 ? (t - t_prev) * 0.000001f : 0.0f;
 		t_prev = t;
 
+		// control fusion of observation data
+		controlFusionModes();
 
 		// run a separate filter for terrain estimation
 		runTerrainEstimator();
-
-		// control fusion of observation data
-		controlFusionModes();
 
 	}
 
