@@ -782,7 +782,7 @@ void Ekf::controlRangeFinderFusion()
 void Ekf::checkForStuckRange()
 {
 	if (_range_data_ready && _range_sample_delayed.time_us - _time_last_rng_ready > 10e6 &&
-			_control_status.flags.in_air) {
+			_control_status.flags.in_air && _time_last_rng_ready != 0) {
 		_rng_stuck = true;
 
 		//require a variance of rangefinder values to check for "stuck" measurements
