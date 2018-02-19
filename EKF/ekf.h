@@ -204,6 +204,12 @@ public:
 	// return a bitmask integer that describes which state estimates can be used for flight control
 	void get_ekf_soln_status(uint16_t *status);
 
+	// perform a limited reset of the wind state covariances
+	void resetWindCovariance();
+
+	// perform a reset of the wind states
+	void resetWindStates();
+
 private:
 
 	static const uint8_t _k_num_states = 24;
@@ -518,12 +524,6 @@ private:
 
 	// perform a limited reset of the magnetic field state covariances
 	void resetMagCovariance();
-
-	// perform a limited reset of the wind state covariances
-	void resetWindCovariance();
-
-	// perform a reset of the wind states
-	void resetWindStates();
 
 	// check that the range finder data is continuous
 	void checkRangeDataContinuity();
