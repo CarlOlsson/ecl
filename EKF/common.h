@@ -324,6 +324,8 @@ struct parameters {
 	unsigned no_aid_timeout_max{1000000};	///< maximum lapsed time from last fusion of measurements that constrain drift before
 						///< the EKF will report that it is dead-reckoning (uSec)
 
+	int32_t valid_timeout_max{5000000};	///< amount of time spent inertial dead reckoning before the estimator reports the state estimates as invalid (uSec)
+
 	// multi-rotor drag specific force fusion
 	float drag_noise{2.5f};			///< observation noise variance for drag specific force measurements (m/sec**2)**2
 	float bcoef_x{25.0f};			///< ballistic coefficient along the X-axis (kg/m**2)
