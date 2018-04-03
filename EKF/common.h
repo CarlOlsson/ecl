@@ -500,6 +500,9 @@ union filter_control_status_u {
 		uint32_t update_mag_states_only   : 1; // 16 - true when only the magnetometer states are updated by the magnetometer
 		uint32_t fixed_wing  : 1; // 17 - true when the vehicle is operating as a fixed wing vehicle
 		uint32_t mag_fault   : 1; // 18 - true when the magnetometer has been declared faulty and is no longer being used
+		uint32_t fuse_aspd   : 1; // 19 - true when airspeed measurements are being fused
+		uint32_t gnd_effect  : 1; // 20 - true when protection from ground effect induced static pressure rise is active
+		uint32_t rng_stuck   : 1; // 21 - true when rng data wasn't ready for more than 10s and new rng values haven't changed enough
 	} flags;
 	uint32_t value;
 };
