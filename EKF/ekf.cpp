@@ -125,6 +125,7 @@ Ekf::Ekf():
 	_gps_hgt_faulty(false),
 	_rng_hgt_faulty(false),
 	_primary_hgt_source(VDIST_SENSOR_BARO),
+	// _rng_stuck(false),	// WINGTRA
 	_rng_check_min_val(0.0f),
 	_rng_check_max_val(0.0f),
 	_time_bad_vert_accel(0)

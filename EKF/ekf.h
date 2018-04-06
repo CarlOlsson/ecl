@@ -366,6 +366,7 @@ private:
 	int _primary_hgt_source;	// priary source of height data set at initialisation
 
 	// variables used to check for "stuck" rng data
+	// bool _rng_stuck;	// WINGTRA
 	float _rng_check_min_val;		// minimum value for new rng measurement when being stuck
 	float _rng_check_max_val;		// maximum value for new rng measurement when being stuck
 
