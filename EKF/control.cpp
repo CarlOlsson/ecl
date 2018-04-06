@@ -783,14 +783,14 @@ void Ekf::checkForStuckRange()
 {
 	if (_range_data_ready && _range_sample_delayed.time_us - _time_last_rng_ready > 10e6 &&
 			_control_status.flags.in_air && _time_last_rng_ready != 0) {
-		_rng_stuck = true;
+		_control_status.flags.rng_stuck = true; // WINGTRA
 
 		//require a variance of rangefinder values to check for "stuck" measurements
 		if (_rng_check_max_val - _rng_check_min_val > 1.0f) {
 			_time_last_rng_ready = _range_sample_delayed.time_us;
 			_rng_check_min_val = 0.0f;
 			_rng_check_max_val = 0.0f;
-			_rng_stuck = false;
+			_control_status.flags.rng_stuck = false; // WINGTRA
 
 		} else {
 			if (_range_sample_delayed.rng > _rng_check_max_val) {
