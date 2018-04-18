@@ -360,7 +360,7 @@ struct parameters {
 		rng_sens_pitch = -1.5708f; // WINGTRA
 		range_noise_scaler = 0.0f;
 		range_tilt_error = 0.05f;
-		range_cos_max_tilt = 0.5f;
+		range_cos_max_tilt = 0.342f; // WINGTRA
 		vehicle_variance_scaler = 0.0f; // WINGTRA
 
 		// vision position fusion
