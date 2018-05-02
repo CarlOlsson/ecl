@@ -165,8 +165,8 @@ bool Ekf::get_terrain_vert_pos(float *ret)
 {
 	memcpy(ret, &_terrain_vpos, sizeof(float));
 
-	if (_terrain_initialised && _range_data_continuous && !_control_status.flags.rng_stuck && // WINGTRA
-		  !_innov_check_fail_status.flags.reject_hagl) {
+	if (_terrain_initialised && !_control_status.flags.rng_stuck && // WINGTRA
+		  (_time_last_imu - _time_last_hagl_fuse < (uint64_t)5e6)) { // WINGTRA
 		return true;
 
 	} else {
