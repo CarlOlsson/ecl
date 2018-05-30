@@ -121,7 +121,17 @@ void ECL_L1_Pos_Controller::navigate_waypoints(const math::Vector<2> &vector_A, 
 		vector_AB = get_local_planar_vector(vector_curr_position, vector_B);
 	}
 
-	vector_AB.normalize();
+	/* WINGTRA: Protection against producing NaNs.
+	 * When triggering RTH, current waypoint is set to current global position,
+	 * previous waypoint is reset to current waypoint and we have all three equal
+	 * which leads to NaN at normalization as vector's length is zero.
+	 * The same can happen for certain types of waypoints
+	 */
+	if (vector_AB.length() > 1.0e-6f) {
+		vector_AB.normalize();
+
+	}
+	/* WINGTRA: End */
 
 	/* calculate the vector from waypoint A to the aircraft */
 	math::Vector<2> vector_A_to_airplane = get_local_planar_vector(vector_A, vector_curr_position);
