@@ -272,14 +272,14 @@ struct parameters {
 	float range_noise{0.1f};		///< observation noise for range finder measurements (m)
 	float range_innov_gate{5.0f};		///< range finder fusion innovation consistency gate size (STD)
 	float rng_gnd_clearance{0.1f};		///< minimum valid value for range when on ground (m)
-	float rng_sens_pitch{0.0f};		///< Pitch offset of the range sensor (rad). Sensor points out along Z axis when offset is zero. Positive rotation is RH about Y axis.
+	float rng_sens_pitch{-1.5708f};		///< Pitch offset of the range sensor (rad). Sensor points out along Z axis when offset is zero. Positive rotation is RH about Y axis. // WINGTRA: sensor is pointing along -x
 	float range_noise_scaler{0.0f};		///< scaling from range measurement to noise (m/m)
 	float vehicle_variance_scaler{0.0f};	///< gain applied to vehicle height variance used in calculation of height above ground observation variance
 	float max_hagl_for_range_aid{5.0f};	///< maximum height above ground for which we allow to use the range finder as height source (if range_aid == 1)
 	float max_vel_for_range_aid{1.0f};	///< maximum ground velocity for which we allow to use the range finder as height source (if range_aid == 1)
 	int32_t range_aid{0};			///< allow switching primary height source to range finder if certian conditions are met
 	float range_aid_innov_gate{1.0f}; 	///< gate size used for innovation consistency checks for range aid fusion
-	float range_cos_max_tilt{0.7071f};	///< cosine of the maximum tilt angle from the vertical that permits use of range finder data
+	float range_cos_max_tilt{0.342f};	///< cosine of the maximum tilt angle from the vertical that permits use of range finder data // WINGTRA: increase the maximum tilt angle to 70 degrees
 
 	// vision position fusion
 	float ev_innov_gate{5.0f};		///< vision estimator fusion innovation consistency gate size (STD)
@@ -433,6 +433,7 @@ union filter_control_status_u {
 		uint32_t mag_fault   : 1; ///< 18 - true when the magnetomer has been declared faulty and is no longer being used
 		uint32_t fuse_aspd   : 1; ///< 19 - true when airspeed measurements are being fused
 		uint32_t gnd_effect  : 1; ///< 20 - true when protection from ground effect induced static pressure rise is active
+		uint32_t rng_stuck   : 1; ///< 21 - true when rng data wasn't ready for more than 10s and new rng values haven't changed enough
 	} flags;
 	uint32_t value;
 };
