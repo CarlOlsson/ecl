@@ -1,16 +1,33 @@
 language: cpp
-sudo: required
-compiler: g++
+os: linux
+dist: trusty
+
+python:
+  - '3.5'
+
+addons:
+  apt:
+    packages:
+     - clang
+     - cmake
+     - libeigen3-dev
+     - python-dev
+     - swig3.0
+
+matrix:
+  fast_finish: true
+  include:
+    - compiler: gcc
+    - compiler: clang
+      env: CC=clang CXX=clang++
+    - env: RUN_PYTEST=1
+  allow_failures:
+    - env: RUN_PYTEST=1
+
 
 before_install:
-- sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-- sudo apt-get update -qq
-
-install:
-- sudo apt-get install -qq g++-4.8 libeigen3-dev
-- export CXX="g++-4.8"
-
-before_script:
- - chmod +x build.sh
+  - if [ -n "${RUN_PYTEST}" ]; then
+      pip install --user -r ./EKF/tests/pytest/requirements.txt;
+    fi
 
 script: ./build.sh

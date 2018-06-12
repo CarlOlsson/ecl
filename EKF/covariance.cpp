@@ -87,21 +87,24 @@ void Ekf::initialiseCovariance()
 	P[12][12] = P[10][10];
 
 	// accel bias
-	P[13][13] = sq(_params.switch_on_accel_bias * dt);
-	P[14][14] = P[13][13];
-	P[15][15] = P[13][13];
+	_prev_dvel_bias_var(0) = P[13][13] = sq(_params.switch_on_accel_bias * dt);
+	_prev_dvel_bias_var(1) = P[14][14] = P[13][13];
+	_prev_dvel_bias_var(2) = P[15][15] = P[13][13];
+
+	// record IMU bias state covariance reset time - used to prevent resets being performed too often
+	_last_imu_bias_cov_reset_us = _imu_sample_delayed.time_us;
 
 	// variances for optional states
 
 	// earth frame and body frame magnetic field
 	// set to observation variance
-	for (uint8_t index=16; index <= 21; index ++) {
+	for (uint8_t index = 16; index <= 21; index ++) {
 		P[index][index] = sq(_params.mag_noise);
 	}
 
 	// wind
-	P[22][22] = 1.0f;
-	P[23][23] = 1.0f;
+	P[22][22] = sq(_params.initial_wind_uncertainty);
+	P[23][23] = sq(_params.initial_wind_uncertainty);
 
 }
 
@@ -143,7 +146,7 @@ void Ekf::predictCovariance()
 	float dvy_b = _state.accel_bias(1);
 	float dvz_b = _state.accel_bias(2);
 
-	float dt = _imu_sample_delayed.delta_ang_dt;
+	float dt = math::constrain(_imu_sample_delayed.delta_ang_dt, 0.0005f * FILTER_UPDATE_PERIOD_MS, 0.002f * FILTER_UPDATE_PERIOD_MS);
 
 	// compute noise variance for stationary processes
 	float process_noise[_k_num_states] = {};
@@ -154,13 +157,32 @@ void Ekf::predictCovariance()
 	// convert rate of change of accelerometer bias (m/s**3) as specified by the parameter to an expected change in delta velocity (m/s) since the last update
 	float d_vel_bias_sig = dt * dt * math::constrain(_params.accel_bias_p_noise, 0.0f, 1.0f);
 
-	// inhibit learning of imu acccel bias if the manoeuvre levels are too high to protect against the effect of sensor nonlinearities
+	// inhibit learning of imu acccel bias if the manoeuvre levels are too high to protect against the effect of sensor nonlinearities or bad accel data is detected
 	float alpha = 1.0f - math::constrain((dt / _params.acc_bias_learn_tc), 0.0f, 1.0f);
-	_ang_rate_mag_filt = fmax(_imu_sample_delayed.delta_ang.norm(), alpha * _ang_rate_mag_filt);
-	_accel_mag_filt = fmax(_imu_sample_delayed.delta_vel.norm(), alpha * _accel_mag_filt);
-	if (_ang_rate_mag_filt > dt * _params.acc_bias_learn_gyr_lim || _accel_mag_filt > dt * _params.acc_bias_learn_acc_lim) {
+	_ang_rate_mag_filt = fmaxf(_imu_sample_delayed.delta_ang.norm(), alpha * _ang_rate_mag_filt);
+	_accel_mag_filt = fmaxf(_imu_sample_delayed.delta_vel.norm(), alpha * _accel_mag_filt);
+	if (_ang_rate_mag_filt > dt * _params.acc_bias_learn_gyr_lim
+			|| _accel_mag_filt > dt * _params.acc_bias_learn_acc_lim
+			|| _bad_vert_accel_detected) {
+		// store the bias state variances to be reinstated later
+		if (!_accel_bias_inhibit) {
+			_prev_dvel_bias_var(0) = P[13][13];
+			_prev_dvel_bias_var(1) = P[14][14];
+			_prev_dvel_bias_var(2) = P[15][15];
+		}
 		_accel_bias_inhibit = true;
 	} else {
+		if (_accel_bias_inhibit) {
+			// reinstate the bias state variances
+			P[13][13] = _prev_dvel_bias_var(0);
+			P[14][14] = _prev_dvel_bias_var(1);
+			P[15][15] = _prev_dvel_bias_var(2);
+		} else {
+			// store the bias state variances to be reinstated later
+			_prev_dvel_bias_var(0) = P[13][13];
+			_prev_dvel_bias_var(1) = P[14][14];
+			_prev_dvel_bias_var(2) = P[15][15];
+		}
 		_accel_bias_inhibit = false;
 	}
 
@@ -185,7 +207,7 @@ void Ekf::predictCovariance()
 	float wind_vel_sig;
 
 	// Don't continue to grow wind velocity state variances if they are becoming too large or we are not using wind velocity states as this can make the covariance matrix badly conditioned
-	if (_control_status.flags.wind && (P[22][22] + P[23][23]) < 1000.0f) {
+	if (_control_status.flags.wind && (P[22][22] + P[23][23]) < 2.0f * sq(_params.initial_wind_uncertainty)) {
 		wind_vel_sig = dt * math::constrain(_params.wind_vel_p_noise, 0.0f, 1.0f);
 
 	} else {
@@ -215,6 +237,11 @@ void Ekf::predictCovariance()
 	float gyro_noise = math::constrain(_params.gyro_noise, 0.0f, 1.0f);
 	daxVar = dayVar = dazVar = sq(dt * gyro_noise);
 	float accel_noise = math::constrain(_params.accel_noise, 0.0f, 1.0f);
+	if (_bad_vert_accel_detected) {
+		// Increase accelerometer process noise if bad accel data is detected. Measurement errors due to
+		// vibration induced clipping commonly reach an equivalent 0.5g offset.
+		accel_noise = BADACC_BIAS_PNOISE;
+	}
 	dvxVar = dvyVar = dvzVar = sq(dt * accel_noise);
 
 	// predict the covariance
@@ -436,26 +463,13 @@ void Ekf::predictCovariance()
 		}
 
 	} else {
-		// Inhibit delta velocity bias learning. Zero the covariance terms but preserve the variances from the
-		// previous prediction step which prevents these states being updated by any of the measurement fusion
-		// processes, but  allows estimation to be resumed later.
+		// Inhibit delta velocity bias learning by zeroing the covariance terms
 		zeroRows(nextP,13,15);
 		zeroCols(nextP,13,15);
-		nextP[13][13] = P[13][13];
-		nextP[14][14] = P[14][14];
-		nextP[15][15] = P[15][15];
-
 	}
 
 	// Don't do covariance prediction on magnetic field states unless we are using 3-axis fusion
 	if (_control_status.flags.mag_3D) {
-		// Check if we have just transitioned into 3-axis fusion and set the state variances
-		if (!_control_status_prev.flags.mag_3D) {
-			for (uint8_t index = 16; index <= 21; index++) {
-				P[index][index] = sq(fmaxf(_params.mag_noise, 0.001f));
-			}
-		}
-
 		// calculate variances and upper diagonal covariances for earth and body magnetic field states
 		nextP[0][16] = P[0][16] + P[1][16]*SF[9] + P[2][16]*SF[11] + P[3][16]*SF[10] + P[10][16]*SF[14] + P[11][16]*SF[15] + P[12][16]*SPP[10];
 		nextP[1][16] = P[1][16] + P[0][16]*SF[8] + P[2][16]*SF[7] + P[3][16]*SF[11] - P[12][16]*SF[15] + P[11][16]*SPP[10] - (P[10][16]*q0)/2;
@@ -714,7 +728,7 @@ void Ekf::fixCovarianceErrors()
 	// by ensuring the corresponding covariance matrix values are kept at zero
 
 	// accelerometer bias states
-	if ((_params.fusion_mode & MASK_INHIBIT_ACC_BIAS)) {
+	if ((_params.fusion_mode & MASK_INHIBIT_ACC_BIAS) || _accel_bias_inhibit) {
 		zeroRows(P,13,15);
 		zeroCols(P,13,15);
 	} else {
@@ -722,12 +736,14 @@ void Ekf::fixCovarianceErrors()
 		const float minSafeStateVar = 1e-9f;
 		float maxStateVar = minSafeStateVar;
 		bool resetRequired = false;
-		for (uint8_t stateIndex=13; stateIndex<=15; stateIndex++) {
-		    if (P[stateIndex][stateIndex] > maxStateVar) {
-			maxStateVar = P[stateIndex][stateIndex];
-		    } else if (P[stateIndex][stateIndex] < minSafeStateVar) {
-			resetRequired = true;
-		    }
+
+		for (uint8_t stateIndex = 13; stateIndex <= 15; stateIndex++) {
+			if (P[stateIndex][stateIndex] > maxStateVar) {
+				maxStateVar = P[stateIndex][stateIndex];
+
+			} else if (P[stateIndex][stateIndex] < minSafeStateVar) {
+				resetRequired = true;
+			}
 		}
 
 		// To ensure stability of the covariance matrix operations, the ratio of a max and min variance must
@@ -735,31 +751,37 @@ void Ekf::fixCovarianceErrors()
 		// Also limit variance to a maximum equivalent to a 1g uncertainty
 		const float minStateVarTarget = 1E-8f;
 		float minAllowedStateVar = fmaxf(0.01f * maxStateVar, minStateVarTarget);
-		for (uint8_t stateIndex=13; stateIndex<=15; stateIndex++) {
-			P[stateIndex][stateIndex] = math::constrain(P[stateIndex][stateIndex], minAllowedStateVar, sq(_gravity_mss * _dt_ekf_avg));
+
+		for (uint8_t stateIndex = 13; stateIndex <= 15; stateIndex++) {
+			P[stateIndex][stateIndex] = math::constrain(P[stateIndex][stateIndex], minAllowedStateVar,
+						    sq(_gravity_mss * _dt_ekf_avg));
 		}
 
 		// If any one axis has fallen below the safe minimum, all delta velocity covariance terms must be reset to zero
 		if (resetRequired) {
-		    float delVelBiasVar[3];
-		    // store all delta velocity bias variances
-		    for (uint8_t stateIndex=13; stateIndex<=15; stateIndex++) {
-			delVelBiasVar[stateIndex-13] = P[stateIndex][stateIndex];
-		    }
-		    // reset all delta velocity bias covariances
-		    zeroCols(P,13,15);
-		    // restore all delta velocity bias variances
-		    for (uint8_t stateIndex=13; stateIndex<=15; stateIndex++) {
-			P[stateIndex][stateIndex] = delVelBiasVar[stateIndex-13];
-		    }
+			float delVelBiasVar[3];
+
+			// store all delta velocity bias variances
+			for (uint8_t stateIndex = 13; stateIndex <= 15; stateIndex++) {
+				delVelBiasVar[stateIndex - 13] = P[stateIndex][stateIndex];
+			}
+
+			// reset all delta velocity bias covariances
+			zeroCols(P, 13, 15);
+
+			// restore all delta velocity bias variances
+			for (uint8_t stateIndex = 13; stateIndex <= 15; stateIndex++) {
+				P[stateIndex][stateIndex] = delVelBiasVar[stateIndex - 13];
+			}
 		}
 
 		// Run additional checks to see if the delta velocity bias has hit limits in a direction that is clearly wrong
 		// calculate accel bias term aligned with the gravity vector
 		float dVel_bias_lim = 0.9f * _params.acc_bias_lim * _dt_ekf_avg;
 		float down_dvel_bias = 0.0f;
-		for (uint8_t axis_index=0; axis_index < 3; axis_index++) {
-			down_dvel_bias += _state.accel_bias(axis_index) * _R_to_earth(2,axis_index);
+
+		for (uint8_t axis_index = 0; axis_index < 3; axis_index++) {
+			down_dvel_bias += _state.accel_bias(axis_index) * _R_to_earth(2, axis_index);
 		}
 
 		// check that the vertical componenent of accel bias is consistent with both the vertical position and velocity innovation
@@ -777,7 +799,7 @@ void Ekf::fixCovarianceErrors()
 
 		// if we have failed for 7 seconds continuously, reset the accel bias covariances to fix bad conditioning of
 		// the covariance matrix but preserve the variances (diagonals) to allow bias learning to continue
-		if (_time_last_imu - _time_acc_bias_check > 7E6) {
+		if (_time_last_imu - _time_acc_bias_check > (uint64_t)7e6) {
 			float varX = P[13][13];
 			float varY = P[14][14];
 			float varZ = P[15][15];
@@ -827,7 +849,7 @@ void Ekf::fixCovarianceErrors()
 }
 
 void Ekf::resetMagCovariance()
-{	
+{
 	// set the quaternion covariance terms to zero
 	zeroRows(P,0,3);
 	zeroCols(P,0,3);
@@ -848,7 +870,7 @@ void Ekf::resetWindCovariance()
 	zeroRows(P,22,23);
 	zeroCols(P,22,23);
 
-	if (_tas_data_ready && (_imu_sample_delayed.time_us - _airspeed_sample_delayed.time_us < 5e5)) {
+	if (_tas_data_ready && (_imu_sample_delayed.time_us - _airspeed_sample_delayed.time_us < (uint64_t)5e5)) {
 		// Use airspeed and zer sideslip assumption to set initial covariance values for wind states
 
 		// calculate the wind speed and bearing
@@ -878,9 +900,8 @@ void Ekf::resetWindCovariance()
 
 	} else {
 		// without airspeed, start with a small initial uncertainty to improve the initial estimate
-		P[22][22] = sq(5.0f);
-		P[23][23] = sq(5.0f);
+		P[22][22] = sq(1.0f);
+		P[23][23] = sq(1.0f);
 
 	}
-
 }

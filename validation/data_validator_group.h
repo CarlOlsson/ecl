@@ -96,14 +96,14 @@ public:
 	 * @return		the number of failovers
 	 */
 	unsigned		failover_count();
-	
+
 	/**
 	 * Get the index of the failed sensor in the group
 	 *
 	 * @return		index of the failed sensor
 	 */
 	int			failover_index();
-	
+
 	/**
 	 * Get the error state of the failed sensor in the group
 	 *
@@ -118,11 +118,19 @@ public:
 	void			print();
 
 	/**
-	 * Set the timeout value
+	 * Set the timeout value for the whole group
 	 *
 	 * @param timeout_interval_us The timeout interval in microseconds
 	 */
 	void			set_timeout(uint32_t timeout_interval_us);
+
+	/**
+	 * Set the equal count threshold for the whole group
+	 *
+	 * @param threshold The number of equal values before considering the sensor stale
+	 */
+	void			set_equal_value_threshold(uint32_t threshold);
+
 
 private:
 	DataValidator *_first;		/**< sibling in the group */

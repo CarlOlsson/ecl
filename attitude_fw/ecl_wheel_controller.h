@@ -55,16 +55,17 @@
 #include "ecl_controller.h"
 
 class __EXPORT ECL_WheelController :
-    public ECL_Controller
+	public ECL_Controller
 {
 public:
-    ECL_WheelController();
+	ECL_WheelController();
+	~ECL_WheelController() = default;
 
-    ~ECL_WheelController();
+	float control_attitude(const struct ECL_ControlData &ctl_data);
 
-    float control_attitude(const struct ECL_ControlData &ctl_data);
+	float control_bodyrate(const struct ECL_ControlData &ctl_data);
 
-    float control_bodyrate(const struct ECL_ControlData &ctl_data);
+	float control_euler_rate(const struct ECL_ControlData &ctl_data) {return 0;}
 };
 
 #endif // ECL_HEADING_CONTROLLER_H

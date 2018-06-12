@@ -72,6 +72,9 @@ void Ekf::fuseAirspeed()
 
 	// Perform fusion of True Airspeed measurement
 	if (v_tas_pred > 1.0f) {
+		// determine if we need the sideslip fusion to correct states other than wind
+		bool update_wind_only = !_is_dead_reckoning;
+
 		// Calculate the observation jacobian
 		// intermediate variable from algebraic optimisation
 		SH_TAS[0] = 1.0f/v_tas_pred;
@@ -95,14 +98,25 @@ void Ekf::fuseAirspeed()
 
 		} else { // Reset the estimator covarinace matrix
 			_fault_status.flags.bad_airspeed = true;
-			initialiseCovariance();
-			ECL_ERR("EKF airspeed fusion numerical error - covariance reset");
+
+			// if we are getting aiding from other sources, warn and reset the wind states and covariances only
+			if (update_wind_only) {
+				resetWindStates();
+				resetWindCovariance();
+				ECL_ERR("EKF airspeed fusion badly conditioned - wind covariance reset");
+
+			} else {
+				initialiseCovariance();
+				_state.wind_vel.setZero();
+				ECL_ERR("EKF airspeed fusion badly conditioned - full covariance reset");
+			}
+
 			return;
 		}
 
 		SK_TAS[1] = SH_TAS[1];
 
-		if (((_time_last_imu - _time_last_gps) < 1e6) || ((_time_last_imu - _time_last_ext_vision) < 1e6) || ((_time_last_imu - _time_last_optflow) < 1e6)) {
+		if (update_wind_only) {
 			// If we are getting aiding from other sources, then don't allow the airspeed measurements to affect the non-windspeed states
 			for (unsigned row = 0; row <= 21; row++) {
 				Kfusion[row] = 0.0f;
@@ -150,8 +164,7 @@ void Ekf::fuseAirspeed()
 		if (_tas_test_ratio > 1.0f) {
 			_innov_check_fail_status.flags.reject_airspeed = true;
 			return;
-		}
-		else {
+		} else {
 			_innov_check_fail_status.flags.reject_airspeed = false;
 		}
 
@@ -231,16 +244,22 @@ void Ekf::get_wind_velocity_var(float *wind_var)
 	wind_var[1] = P[23][23];
 }
 
+void Ekf::get_true_airspeed(float *tas)
+{
+	float tempvar = sqrtf(sq(_state.vel(0) - _state.wind_vel(0)) + sq(_state.vel(1) - _state.wind_vel(1)) + sq(_state.vel(2)));
+	memcpy(tas, &tempvar, sizeof(float));
+}
+
 /*
  * Reset the wind states using the current airspeed measurement, ground relative nav velocity, yaw angle and assumption of zero sideslip
 */
 void Ekf::resetWindStates()
 {
 	// get euler yaw angle
-	matrix::Euler<float> euler321(_state.quat_nominal);
+	Eulerf euler321(_state.quat_nominal);
 	float euler_yaw = euler321(2);
 
-	if (_tas_data_ready && (_imu_sample_delayed.time_us - _airspeed_sample_delayed.time_us < 5e5)) {
+	if (_tas_data_ready && (_imu_sample_delayed.time_us - _airspeed_sample_delayed.time_us < (uint64_t)5e5)) {
 		// estimate wind using zero sideslip assumption and airspeed measurement if airspeed available
 		_state.wind_vel(0) = _state.vel(0) - _airspeed_sample_delayed.true_airspeed * cosf(euler_yaw);
 		_state.wind_vel(1) = _state.vel(1) - _airspeed_sample_delayed.true_airspeed * sinf(euler_yaw);
@@ -249,6 +268,5 @@ void Ekf::resetWindStates()
 		// If we don't have an airspeed measurement, then assume the wind is zero
 		_state.wind_vel(0) = 0.0f;
 		_state.wind_vel(1) = 0.0f;
-
 	}
 }

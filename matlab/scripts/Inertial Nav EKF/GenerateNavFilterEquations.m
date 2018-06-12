@@ -76,7 +76,6 @@ dVelBias = [dvx_b; dvy_b; dvz_b];
 
 % define the quaternion rotation vector for the state estimate
 quat = [q0;q1;q2;q3];
-
 % derive the truth body to nav direction cosine matrix
 Tbn = Quat2Tbn(quat);
 
@@ -229,25 +228,43 @@ reset(symengine);
 %% derive equations for sequential fusion of optical flow measurements
 load('StatePrediction.mat');
 
-% range is defined as distance from camera focal point to centre of sensor fov
+% Range is defined as distance from camera focal point to object measured
+% along sensor Z axis
 syms range real;
 
-% calculate relative velocity in body frame
-relVelBody = transpose(Tbn)*[vn;ve;vd];
+% Define rotation matrix from body to sensor frame
+syms Tbs_a_x Tbs_a_y Tbs_a_z real;
+syms Tbs_b_x Tbs_b_y Tbs_b_z real;
+syms Tbs_c_x Tbs_c_y Tbs_c_z real;
+Tbs = [ ...
+    Tbs_a_x Tbs_a_y Tbs_a_z ; ...
+    Tbs_b_x Tbs_b_y Tbs_b_z ; ...
+    Tbs_c_x Tbs_c_y Tbs_c_z ...
+    ];
 
-% divide by range to get predicted angular LOS rates relative to X and Y
-% axes. Note these are body angular rate motion compensated optical flow rates
-losRateX = +relVelBody(2)/range;
-losRateY = -relVelBody(1)/range;
+% Calculate earth relative velocity in a non-rotating sensor frame
+relVelSensor = Tbs * transpose(Tbn) * [vn;ve;vd];
 
-save('temp1.mat','losRateX','losRateY');
+% Divide by range to get predicted angular LOS rates relative to X and Y
+% axes. Note these are rates in a non-rotating sensor frame
+losRateSensorX = +relVelSensor(2)/range;
+losRateSensorY = -relVelSensor(1)/range;
 
-% calculate the observation Jacobian for the X axis
-H_LOSX = jacobian(losRateX,stateVector); % measurement Jacobian
+save('temp1.mat','losRateSensorX','losRateSensorY');
+
+clear all;
+reset(symengine);
+load('StatePrediction.mat');
+load('temp1.mat');
+
+% calculate the observation Jacobian and Kalman gain for the X axis
+H_LOSX = jacobian(losRateSensorX,stateVector); % measurement Jacobian
 H_LOSX = simplify(H_LOSX);
-save('temp2.mat','H_LOSX');
-ccode(H_LOSX,'file','H_LOSX.c');
-fix_c_code('H_LOSX.c');
+K_LOSX = (P*transpose(H_LOSX))/(H_LOSX*P*transpose(H_LOSX) + R_LOS); % Kalman gain vector
+K_LOSX = simplify(K_LOSX);
+save('temp2.mat','H_LOSX','K_LOSX');
+ccode([H_LOSX;transpose(K_LOSX)],'file','LOSX.c');
+fix_c_code('LOSX.c');
 
 clear all;
 reset(symengine);
@@ -255,39 +272,120 @@ load('StatePrediction.mat');
 load('temp1.mat');
 
 % calculate the observation Jacobian for the Y axis
-H_LOSY = jacobian(losRateY,stateVector); % measurement Jacobian
+H_LOSY = jacobian(losRateSensorY,stateVector); % measurement Jacobian
 H_LOSY = simplify(H_LOSY);
-save('temp3.mat','H_LOSY');
-ccode(H_LOSY,'file','H_LOSY.c');
-fix_c_code('H_LOSY.c');
-
-clear all;
-reset(symengine);
-load('StatePrediction.mat');
-load('temp1.mat');
-load('temp2.mat');
-
-% calculate Kalman gain vector for the X axis
-K_LOSX = (P*transpose(H_LOSX))/(H_LOSX*P*transpose(H_LOSX) + R_LOS); % Kalman gain vector
-K_LOSX = simplify(K_LOSX);
-ccode(K_LOSX,'file','K_LOSX.c');
-fix_c_code('K_LOSX.c');
-
-clear all;
-reset(symengine);
-load('StatePrediction.mat');
-load('temp1.mat');
-load('temp3.mat');
-
-% calculate Kalman gain vector for the Y axis
 K_LOSY = (P*transpose(H_LOSY))/(H_LOSY*P*transpose(H_LOSY) + R_LOS); % Kalman gain vector
 K_LOSY = simplify(K_LOSY);
-ccode(K_LOSY,'file','K_LOSY.c');
-fix_c_code('K_LOSY.c');
+save('temp3.mat','H_LOSY','K_LOSY');
+ccode([H_LOSY;transpose(K_LOSY)],'file','LOSY.c');
+fix_c_code('LOSY.c');
 
 % reset workspace
 clear all;
 reset(symengine);
+
+%% derive equations for sequential fusion of body frame velocity measurements
+load('StatePrediction.mat');
+
+% body frame velocity observations
+syms velX velY velZ real;
+
+% velocity observation variance
+syms R_VEL real;
+
+% calculate relative velocity in body frame
+relVelBody = transpose(Tbn)*[vn;ve;vd];
+
+save('temp1.mat','relVelBody','R_VEL');
+
+% calculate the observation Jacobian for the X axis
+H_VELX = jacobian(relVelBody(1),stateVector); % measurement Jacobian
+H_VELX = simplify(H_VELX);
+save('temp2.mat','H_VELX');
+ccode(H_VELX,'file','H_VELX.c');
+fix_c_code('H_VELX.c');
+
+clear all;
+reset(symengine);
+load('StatePrediction.mat');
+load('temp1.mat');
+
+% calculate the observation Jacobian for the Y axis
+H_VELY = jacobian(relVelBody(2),stateVector); % measurement Jacobian
+H_VELY = simplify(H_VELY);
+save('temp3.mat','H_VELY');
+ccode(H_VELY,'file','H_VELY.c');
+fix_c_code('H_VELY.c');
+
+clear all;
+reset(symengine);
+load('StatePrediction.mat');
+load('temp1.mat');
+
+% calculate the observation Jacobian for the Z axis
+H_VELZ = jacobian(relVelBody(3),stateVector); % measurement Jacobian
+H_VELZ = simplify(H_VELZ);
+save('temp4.mat','H_VELZ');
+ccode(H_VELZ,'file','H_VELZ.c');
+fix_c_code('H_VELZ.c');
+
+clear all;
+reset(symengine);
+
+% calculate Kalman gain vector for the X axis
+load('StatePrediction.mat');
+load('temp1.mat');
+load('temp2.mat');
+
+K_VELX = (P*transpose(H_VELX))/(H_VELX*P*transpose(H_VELX) + R_VEL); % Kalman gain vector
+K_VELX = simplify(K_VELX);
+ccode(K_VELX,'file','K_VELX.c');
+fix_c_code('K_VELX.c');
+
+clear all;
+reset(symengine);
+
+% calculate Kalman gain vector for the Y axis
+load('StatePrediction.mat');
+load('temp1.mat');
+load('temp3.mat');
+
+K_VELY = (P*transpose(H_VELY))/(H_VELY*P*transpose(H_VELY) + R_VEL); % Kalman gain vector
+K_VELY = simplify(K_VELY);
+ccode(K_VELY,'file','K_VELY.c');
+fix_c_code('K_VELY.c');
+
+clear all;
+reset(symengine);
+
+% calculate Kalman gain vector for the Z axis
+load('StatePrediction.mat');
+load('temp1.mat');
+load('temp4.mat');
+
+K_VELZ = (P*transpose(H_VELZ))/(H_VELZ*P*transpose(H_VELZ) + R_VEL); % Kalman gain vector
+K_VELZ = simplify(K_VELZ);
+ccode(K_VELZ,'file','K_VELZ.c');
+fix_c_code('K_VELZ.c');
+
+% reset workspace
+clear all;
+reset(symengine);
+
+% calculate Kalman gains vectors for X,Y,Z to take advantage of common
+% terms
+load('StatePrediction.mat');
+load('temp1.mat');
+load('temp2.mat');
+load('temp3.mat');
+load('temp4.mat');
+K_VELX = (P*transpose(H_VELX))/(H_VELX*P*transpose(H_VELX) + R_VEL); % Kalman gain vector
+K_VELY = (P*transpose(H_VELY))/(H_VELY*P*transpose(H_VELY) + R_VEL); % Kalman gain vector
+K_VELZ = (P*transpose(H_VELZ))/(H_VELZ*P*transpose(H_VELZ) + R_VEL); % Kalman gain vector
+K_VEL = simplify([K_VELX,K_VELY,K_VELZ]);
+ccode(K_VEL,'file','K_VEL.c');
+fix_c_code('K_VEL.c');
+
 
 %% derive equations for fusion of 321 sequence yaw measurement
 load('StatePrediction.mat');
