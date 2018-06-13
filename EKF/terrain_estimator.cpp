@@ -203,3 +203,9 @@ void Ekf::checkRangeDataContinuity()
 		_range_data_continuous = false;
 	}
 }
+
+// WINGTRA
+void Ekf::get_R_rng_to_earth_2_2(float *ret)
+{
+	memcpy(ret, &_R_rng_to_earth_2_2_now, sizeof(float));
+}

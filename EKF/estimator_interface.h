@@ -343,6 +343,8 @@ public:
 	// return a bitmask integer that describes which state estimates can be used for flight control
 	virtual void get_ekf_soln_status(uint16_t *status) = 0;
 
+	virtual void get_R_rng_to_earth_2_2(float *ret) = 0;	// WINGTRA
+
 	// Getter for the average imu update period in s
 	float get_dt_imu_avg()
 	{

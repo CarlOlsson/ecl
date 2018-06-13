@@ -232,6 +232,8 @@ public:
 	// return the quaternion defining the rotation from the EKF to the External Vision reference frame
 	void get_ekf2ev_quaternion(float *quat);
 
+	void get_R_rng_to_earth_2_2(float *ret); // WINGTRA
+
 private:
 
 	static constexpr uint8_t _k_num_states{24};		///< number of EKF states
@@ -411,6 +413,7 @@ private:
 	float _sin_tilt_rng{0.0f};		///< sine of the range finder tilt rotation about the Y body axis
 	float _cos_tilt_rng{0.0f};		///< cosine of the range finder tilt rotation about the Y body axis
 	float _R_rng_to_earth_2_2{0.0f};	///< 2,2 element of the rotation matrix from sensor frame to earth frame
+	float _R_rng_to_earth_2_2_now{0.0f};	///< WINGTRA: 2,2 element of the rotation matrix from sensor frame to earth frame at the current time
 	bool _range_data_continuous{false};	///< true when we are receiving range finder data faster than a 2Hz average
 	float _dt_last_range_update_filt_us{0.0f};	///< filtered value of the delta time elapsed since the last range measurement came into the filter (uSec)
 

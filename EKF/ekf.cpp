@@ -481,6 +481,9 @@ void Ekf::calculateOutputStates()
 	// calculate the rotation matrix from body to earth frame
 	_R_to_earth_now = quat_to_invrotmat(_output_new.quat_nominal);
 
+	 // WINGTRA: calculate 2,2 element of rotation matrix from sensor frame to earth frame
+  	_R_rng_to_earth_2_2_now = _R_to_earth_now(2, 0) * _sin_tilt_rng + _R_to_earth_now(2, 2) * _cos_tilt_rng;
+
 	// rotate the delta velocity to earth frame
 	Vector3f delta_vel_NED = _R_to_earth_now * delta_vel;
 
