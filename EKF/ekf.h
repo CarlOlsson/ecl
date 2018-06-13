@@ -234,6 +234,14 @@ public:
 
 	void get_R_rng_to_earth_2_2(float *ret); // WINGTRA
 
+	bool vel_is_rejected(); // WINGTRA: return true if velocity test ratio is > 1
+
+	// perform a limited reset of the wind state covariances WINGTRA: Make public
+	void resetWindCovariance();
+
+	// perform a reset of the wind states WINGTRA: Make public
+	void resetWindStates();
+
 private:
 
 	static constexpr uint8_t _k_num_states{24};		///< number of EKF states
@@ -628,12 +636,6 @@ private:
 
 	// perform a limited reset of the magnetic field state covariances
 	void resetMagCovariance();
-
-	// perform a limited reset of the wind state covariances
-	void resetWindCovariance();
-
-	// perform a reset of the wind states
-	void resetWindStates();
 
 	// check that the range finder data is continuous
 	void checkRangeDataContinuity();
