@@ -57,12 +57,8 @@ DataValidator::DataValidator(DataValidator *prev_sibling) :
 	_value{0.0f},
 	_vibe{0.0f},
 	_value_equal_count(0),
+	_value_equal_count_threshold(VALUE_EQUAL_COUNT_DEFAULT),
 	_sibling(prev_sibling)
-{
-
-}
-
-DataValidator::~DataValidator()
 {
 
 }
@@ -124,7 +120,7 @@ float
 DataValidator::confidence(uint64_t timestamp)
 {
 	float ret = 1.0f;
-	
+
 	/* check if we have any data */
 	if (_time_last == 0) {
 		_error_mask |= ERROR_FLAG_NO_DATA;
@@ -136,7 +132,7 @@ DataValidator::confidence(uint64_t timestamp)
 		ret = 0.0f;
 
 	/* we got the exact same sensor value N times in a row */
-	} else if (_value_equal_count > VALUE_EQUAL_COUNT_MAX) {
+	} else if (_value_equal_count > _value_equal_count_threshold) {
 		_error_mask |= ERROR_FLAG_STALE_DATA;
 		ret = 0.0f;
 
@@ -150,17 +146,18 @@ DataValidator::confidence(uint64_t timestamp)
 		_error_mask |= ERROR_FLAG_HIGH_ERRDENSITY;
 		_error_density = ERROR_DENSITY_WINDOW;
 
-	/* no error */
-	} else {
-		_error_mask = ERROR_FLAG_NO_ERROR;
 	}
-	
+
 	/* no critical errors */
 	if (ret > 0.0f) {
 		/* return local error density for last N measurements */
 		ret = 1.0f - (_error_density / ERROR_DENSITY_WINDOW);
+
+		if (ret > 0.0f) {
+			_error_mask = ERROR_FLAG_NO_ERROR;
+		}
 	}
-	
+
 	return ret;
 }
 

@@ -45,9 +45,9 @@
 bool Ekf::initHagl()
 {
 	// get most recent range measurement from buffer
-	rangeSample latest_measurement = _range_buffer.get_newest();
+	const rangeSample& latest_measurement = _range_buffer.get_newest();
 
-	if ((_time_last_imu - latest_measurement.time_us) < 2e5 && _R_rng_to_earth_2_2 > _params.range_cos_max_tilt && _range_data_ready) {
+	if ((_time_last_imu - latest_measurement.time_us) < (uint64_t)2e5 && _R_rng_to_earth_2_2 > _params.range_cos_max_tilt) {
 		// if we have a fresh measurement, use it to initialise the terrain estimator
 		_terrain_vpos = _state.pos(2) + latest_measurement.rng * _R_rng_to_earth_2_2;
 		// initialise state variance to variance of measurement
@@ -93,7 +93,7 @@ void Ekf::runTerrainEstimator()
 		_terrain_var = math::constrain(_terrain_var, 0.0f, 1e4f);
 
 		// Fuse range finder data if available
-		if (_range_data_ready && !_control_status.flags.rng_stuck) { // WINGTRA
+		if (_range_data_ready && !_control_status.flags.rng_stuck) {
 			fuseHagl();
 
 			// update range sensor angle parameters in case they have changed
@@ -123,12 +123,8 @@ void Ekf::fuseHagl()
 		// calculate the innovation
 		_hagl_innov = pred_hagl - meas_hagl;
 
-		// calculate the height observation variance due to vehicle position uncertainty, range measurement error and range finder tilt uncertainty
-		float range_measurement_variance = sq(_params.range_noise) * (1.0f + sq(_range_sample_delayed.rng * _params.range_noise_scaler));
-		const float tilt_angle_variance = sq(_params.range_tilt_error);
-		float obs_variance = fmaxf(P[9][9] * _params.vehicle_variance_scaler, 0.0f) // vehicle height uncertainty
-				+ range_measurement_variance * sq(_R_rng_to_earth_2_2) // range measurement error
-				+ tilt_angle_variance * sq(_range_sample_delayed.rng) * (1.0f - sq(_R_rng_to_earth_2_2)); // tilt uncertainty
+		// calculate the observation variance adding the variance of the vehicles own height uncertainty
+		float obs_variance = fmaxf(P[9][9], 0.0f) + sq(_params.range_noise) + sq(_params.range_noise_scaler * _range_sample_delayed.rng);
 
 		// calculate the innovation variance - limiting it to prevent a badly conditioned fusion
 		_hagl_innov_var = fmaxf(_terrain_var + obs_variance, obs_variance);
@@ -159,14 +155,11 @@ void Ekf::fuseHagl()
 	}
 }
 
-// return true if the estimate is fresh
-// return the estimated vertical position of the terrain relative to the NED origin
-bool Ekf::get_terrain_vert_pos(float *ret)
+// return true if the terrain estimate is valid
+bool Ekf::get_terrain_valid()
 {
-	memcpy(ret, &_terrain_vpos, sizeof(float));
-
-	if (_terrain_initialised && !_control_status.flags.rng_stuck && // WINGTRA
-		  (_time_last_imu - _time_last_hagl_fuse < (uint64_t)5e6)) { // WINGTRA
+	if (_terrain_initialised && !_control_status.flags.rng_stuck && // WINGTRA: remove _range_data_continuous
+		  (_time_last_imu - _time_last_hagl_fuse < (uint64_t)5e6)) {
 		return true;
 
 	} else {
@@ -174,16 +167,10 @@ bool Ekf::get_terrain_vert_pos(float *ret)
 	}
 }
 
-// WINGTRA
-void Ekf::get_terrain_var(float *ret)
+// get the estimated vertical position of the terrain relative to the NED origin
+void Ekf::get_terrain_vert_pos(float *ret)
 {
-	memcpy(ret, &_terrain_var, sizeof(float));
-}
-
-// WINGTRA
-void Ekf::get_R_rng_to_earth_2_2(float *ret)
-{
-	memcpy(ret, &_R_rng_to_earth_2_2_now, sizeof(float));
+	memcpy(ret, &_terrain_vpos, sizeof(float));
 }
 
 void Ekf::get_hagl_innov(float *hagl_innov)
@@ -200,19 +187,25 @@ void Ekf::get_hagl_innov_var(float *hagl_innov_var)
 // check that the range finder data is continuous
 void Ekf::checkRangeDataContinuity()
 {
-	// update range data continuous flag (5Hz ie 200 ms)
+	// update range data continuous flag (2Hz ie 500 ms)
 	/* Timing in micro seconds */
 
-	/* Apply a 1/2.0 sec low pass filter to the time delta from the last range finder updates */
-	_dt_last_range_update_filt_us = _dt_last_range_update_filt_us * (1.0f - 2.0f * _dt_update) + 2.0f * _dt_update *
+	/* Apply a 1.0 sec low pass filter to the time delta from the last range finder updates */
+	_dt_last_range_update_filt_us = _dt_last_range_update_filt_us * (1.0f - _dt_update) + _dt_update *
 					(_time_last_imu - _time_last_range);
 
 	_dt_last_range_update_filt_us = fminf(_dt_last_range_update_filt_us, 1e6f);
 
-	if (_dt_last_range_update_filt_us < 2e5f) {
+	if (_dt_last_range_update_filt_us < 5e5f) {
 		_range_data_continuous = true;
 
 	} else {
 		_range_data_continuous = false;
 	}
+}
+
+// WINGTRA
+void Ekf::get_R_rng_to_earth_2_2(float *ret)
+{
+	memcpy(ret, &_R_rng_to_earth_2_2_now, sizeof(float));
 }

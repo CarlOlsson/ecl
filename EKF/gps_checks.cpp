@@ -57,18 +57,18 @@
 
 bool Ekf::collect_gps(uint64_t time_usec, struct gps_message *gps)
 {
-	// If we have defined the WGS-84 position of the NED origin, run gps quality checks until they pass, then define the origins WGS-84 position using the last GPS fix
-	if (!_NED_origin_initialised) {
-		// we have good GPS data so can now set the origin's WGS-84 position
-		if (gps_is_good(gps) && !_NED_origin_initialised) {
-			ECL_INFO("EKF gps is good - setting origin");
-			// Set the origin's WGS-84 position to the last gps fix
+	// Run GPS checks whenever the WGS-84 origin is not set or the vehicle is not using GPS
+	// Also run checks if the vehicle is on-ground as the check data can be used by vehicle pre-flight checks
+	if (!_control_status.flags.in_air || !_NED_origin_initialised || !_control_status.flags.gps) {
+		bool gps_checks_pass = gps_is_good(gps);
+		if (!_NED_origin_initialised && gps_checks_pass) {
+			// If we have good GPS data set the origin's WGS-84 position to the last gps fix
 			double lat = gps->lat / 1.0e7;
 			double lon = gps->lon / 1.0e7;
 			map_projection_init_timestamped(&_pos_ref, lat, lon, _time_last_imu);
 
 			// if we are already doing aiding, corect for the change in posiiton since the EKF started navigating
-			if (_control_status.flags.opt_flow || _control_status.flags.gps) {
+			if (_control_status.flags.opt_flow || _control_status.flags.gps || _control_status.flags.ev_pos) {
 				double est_lat, est_lon;
 				map_projection_reproject(&_pos_ref, -_state.pos(0), -_state.pos(1), &est_lat, &est_lon);
 				map_projection_init_timestamped(&_pos_ref, est_lat, est_lon, _time_last_imu);
@@ -86,25 +86,20 @@ bool Ekf::collect_gps(uint64_t time_usec, struct gps_message *gps)
 
 			// if the user has selected GPS as the primary height source, switch across to using it
 			if (_primary_hgt_source == VDIST_SENSOR_GPS) {
-				ECL_INFO("EKF switching to GPS height");
+				ECL_INFO("EKF GPS checks passed (WGS-84 origin set, using GPS height)");
 				_control_status.flags.baro_hgt = false;
 				_control_status.flags.gps_hgt = true;
 				_control_status.flags.rng_hgt = false;
 				// zero the sensor offset
 				_hgt_sensor_offset = 0.0f;
+			} else {
+				ECL_INFO("EKF GPS checks passed (WGS-84 origin set)");
 			}
 		}
 	}
 
 	// start collecting GPS if there is a 3D fix and the NED origin has been set
-	if (_NED_origin_initialised && gps->fix_type >= 3) {
-		return true;
-
-	} else {
-		return false;
-	}
-
-	return false;
+	return _NED_origin_initialised && (gps->fix_type >= 3);
 }
 
 /*
@@ -140,18 +135,22 @@ bool Ekf::gps_is_good(struct gps_message *gps)
 	double lat = gps->lat * 1.0e-7;
 	double lon = gps->lon * 1.0e-7;
 
-	if (_pos_ref.init_done) {
-		map_projection_project(&_pos_ref, lat, lon, &delta_posN, &delta_PosE);
-
+	// calculate position movement since last GPS fix
+	if (_gps_pos_prev.timestamp > 0) {
+		map_projection_project(&_gps_pos_prev, lat, lon, &delta_posN, &delta_PosE);
 	} else {
-		map_projection_init_timestamped(&_pos_ref, lat, lon, _time_last_imu);
-		_gps_alt_ref = 1e-3f * (float)gps->alt;
+		// no previous position has been set
+		map_projection_init_timestamped(&_gps_pos_prev, lat, lon, _time_last_imu);
+		_gps_alt_prev = 1e-3f * (float)gps->alt;
 	}
 
 	// Calculate time lapsed since last update, limit to prevent numerical errors and calculate the lowpass filter coefficient
 	const float filt_time_const = 10.0f;
-	float dt = fminf(fmaxf(float(_time_last_imu - _last_gps_origin_time_us) * 1e-6f, 0.001f), filt_time_const);
+	float dt = fminf(fmaxf(float(_time_last_imu - _gps_pos_prev.timestamp) * 1e-6f, 0.001f), filt_time_const);
 	float filter_coef = dt / filt_time_const;
+
+	// save GPS fix for next time
+	map_projection_init_timestamped(&_gps_pos_prev, lat, lon, _time_last_imu);
 
 	// Calculate the horizontal drift velocity components and limit to 10x the threshold
 	float vel_limit = 10.0f * _params.req_hdrift;
@@ -172,16 +171,11 @@ bool Ekf::gps_is_good(struct gps_message *gps)
 		_gps_check_fail_status.flags.hdrift = false;
 	}
 
-	// Save current position as the reference for next time
-	map_projection_init_timestamped(&_pos_ref, lat, lon, _time_last_imu);
-	_last_gps_origin_time_us = _time_last_imu;
-
 	// Calculate the vertical drift velocity and limit to 10x the threshold
 	vel_limit = 10.0f * _params.req_vdrift;
-	float velD = fminf(fmaxf((_gps_alt_ref - 1e-3f * (float)gps->alt) / dt, -vel_limit), vel_limit);
-
-	// Save the current height as the reference for next time
-	_gps_alt_ref = 1e-3f * (float)gps->alt;
+	float gps_alt_m = 1e-3f * (float)gps->alt;
+	float velD = math::constrain(((_gps_alt_prev - gps_alt_m) / dt), -vel_limit, vel_limit);
+	_gps_alt_prev = gps_alt_m;
 
 	// Apply a low pass filter to the vertical velocity
 	_gps_drift_velD = velD * filter_coef + _gps_drift_velD * (1.0f - filter_coef);
@@ -238,10 +232,5 @@ bool Ekf::gps_is_good(struct gps_message *gps)
 	}
 
 	// continuous period without fail of 10 seconds required to return a healthy status
-	if (_time_last_imu - _last_gps_fail_us > 1e7) {
-		return true;
-	}
-
-	return false;
+	return (_time_last_imu - _last_gps_fail_us > (uint64_t)1e7);
 }
-

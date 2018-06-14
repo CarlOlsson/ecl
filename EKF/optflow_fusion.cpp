@@ -69,14 +69,14 @@ void Ekf::fuseOptFlow()
 	float heightAboveGndEst = math::max((_terrain_vpos - _state.pos(2)), gndclearance);
 
 	// get rotation nmatrix from earth to body
-	matrix::Dcm<float> earth_to_body(_state.quat_nominal);
+	Dcmf earth_to_body(_state.quat_nominal);
 	earth_to_body = earth_to_body.transpose();
 
 	// calculate the sensor position relative to the IMU
 	Vector3f pos_offset_body = _params.flow_pos_body - _params.imu_pos_body;
 
 	// calculate the velocity of the sensor reelative to the imu in body frame
-	Vector3f vel_rel_imu_body = cross_product(_flow_sample_delayed.gyroXYZ , pos_offset_body);
+	Vector3f vel_rel_imu_body = cross_product(_flow_sample_delayed.gyroXYZ, pos_offset_body);
 
 	// calculate the velocity of the sensor in the earth frame
 	Vector3f vel_rel_earth = _state.vel + _R_to_earth * vel_rel_imu_body;
@@ -405,10 +405,10 @@ void Ekf::fuseOptFlow()
 	for (uint8_t obs_index = 0; obs_index <= 1; obs_index++) {
 		if (optflow_test_ratio[obs_index] > 1.0f) {
 			flow_fail = true;
-			_innov_check_fail_status.value |= (1 << (obs_index + 9));
+			_innov_check_fail_status.value |= (1 << (obs_index + 10));
 
 		} else {
-			_innov_check_fail_status.value &= ~(1 << (obs_index + 9));
+			_innov_check_fail_status.value &= ~(1 << (obs_index + 10));
 
 		}
 	}
@@ -510,23 +510,30 @@ void Ekf::get_flow_innov_var(float flow_innov_var[2])
 	memcpy(flow_innov_var, _flow_innov_var, sizeof(_flow_innov_var));
 }
 
+void Ekf::get_drag_innov(float drag_innov[2])
+{
+	memcpy(drag_innov, _drag_innov, sizeof(_drag_innov));
+}
+
+
+void Ekf::get_drag_innov_var(float drag_innov_var[2])
+{
+	memcpy(drag_innov_var, _drag_innov_var, sizeof(_drag_innov_var));
+}
+
 // calculate optical flow gyro bias errors
 void Ekf::calcOptFlowBias()
 {
-	// accumulate the bias corrected delta angles from the navigation sensor and lapsed time
-	_imu_del_ang_of += _imu_sample_delayed.delta_ang;
-	_delta_time_of += _imu_sample_delayed.delta_ang_dt;
-
 	// reset the accumulators if the time interval is too large
 	if (_delta_time_of > 1.0f) {
 		_imu_del_ang_of.setZero();
 		_delta_time_of = 0.0f;
+		return;
 	}
 
 	// if accumulation time differences are not excessive and accumulation time is adequate
 	// compare the optical flow and and navigation rate data and calculate a bias error
-	if ((fabsf(_delta_time_of - _flow_sample_delayed.dt) < 0.05f) && (_delta_time_of > 0.01f)
-	    && (_flow_sample_delayed.dt > 0.01f)) {
+	if ((fabsf(_delta_time_of - _flow_sample_delayed.dt) < 0.1f) && (_delta_time_of > 0.01f)) {
 		// calculate a reference angular rate
 		Vector3f reference_body_rate;
 		reference_body_rate = _imu_del_ang_of * (1.0f / _delta_time_of);

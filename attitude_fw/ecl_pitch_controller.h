@@ -59,10 +59,10 @@ class __EXPORT ECL_PitchController :
 {
 public:
 	ECL_PitchController();
-
-	~ECL_PitchController();
+	~ECL_PitchController() = default;
 
 	float control_attitude(const struct ECL_ControlData &ctl_data);
+	float control_euler_rate(const struct ECL_ControlData &ctl_data);
 	float control_bodyrate(const struct ECL_ControlData &ctl_data);
 
 	/* Additional Setters */

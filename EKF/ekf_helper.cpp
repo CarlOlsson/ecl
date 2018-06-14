@@ -56,23 +56,22 @@ bool Ekf::resetVelocity()
 		// this reset is only called if we have new gps data at the fusion time horizon
 		_state.vel = _gps_sample_delayed.vel;
 
+		// use GPS accuracy to reset variances
+		setDiag(P,4,6,sq(_gps_sample_delayed.sacc));
+
 	} else if (_control_status.flags.opt_flow || _control_status.flags.ev_pos) {
 		_state.vel.setZero();
+		zeroOffDiag(P,4,6);
 
 	} else {
 		return false;
-
 	}
 
 	// calculate the change in velocity and apply to the output predictor state history
-	Vector3f velocity_change = _state.vel - vel_before_reset;
-	outputSample output_states;
-	unsigned max_index = _output_buffer.get_length() - 1;
-	for (unsigned index=0; index <= max_index; index++) {
-		output_states = _output_buffer.get_from_index(index);
-		output_states.vel += velocity_change;
-		_output_buffer.push_to_index(index,output_states);
+	const Vector3f velocity_change = _state.vel - vel_before_reset;
 
+	for (uint8_t index = 0; index < _output_buffer.get_length(); index++) {
+		_output_buffer[index].vel += velocity_change;
 	}
 
 	// apply the change in velocity to our newest velocity estimate
@@ -98,35 +97,40 @@ bool Ekf::resetPosition()
 	posNE_before_reset(0) = _state.pos(0);
 	posNE_before_reset(1) = _state.pos(1);
 
+	// let the next odometry update know that the previous value of states cannot be used to calculate the change in position
+	_hpos_prev_available = false;
+
 	if (_control_status.flags.gps) {
 		// this reset is only called if we have new gps data at the fusion time horizon
 		_state.pos(0) = _gps_sample_delayed.pos(0);
 		_state.pos(1) = _gps_sample_delayed.pos(1);
 
+		// use GPS accuracy to reset variances
+		setDiag(P,7,8,sq(_gps_sample_delayed.hacc));
+
 	} else if (_control_status.flags.opt_flow) {
 		_state.pos(0) = 0.0f;
 		_state.pos(1) = 0.0f;
+		zeroOffDiag(P,7,8);
 
 	} else if (_control_status.flags.ev_pos) {
 		// this reset is only called if we have new ev data at the fusion time horizon
 		_state.pos(0) = _ev_sample_delayed.posNED(0);
 		_state.pos(1) = _ev_sample_delayed.posNED(1);
 
+		// use EV accuracy to reset variances
+		setDiag(P,7,8,sq(_ev_sample_delayed.posErr));
+
 	} else {
 		return false;
 	}
 
 	// calculate the change in position and apply to the output predictor state history
-	Vector2f posNE_change;
-	posNE_change(0) = _state.pos(0) - posNE_before_reset(0);
-	posNE_change(1) = _state.pos(1) - posNE_before_reset(1);
-	outputSample output_states;
-	unsigned max_index = _output_buffer.get_length() - 1;
-	for (unsigned index=0; index <= max_index; index++) {
-		output_states = _output_buffer.get_from_index(index);
-		output_states.pos(0) += posNE_change(0);
-		output_states.pos(1) += posNE_change(1);
-		_output_buffer.push_to_index(index,output_states);
+	const Vector2f posNE_change{_state.pos(0) - posNE_before_reset(0), _state.pos(1) - posNE_before_reset(1)};
+
+	for (uint8_t index = 0; index < _output_buffer.get_length(); index++) {
+		_output_buffer[index].pos(0) += posNE_change(0);
+		_output_buffer[index].pos(1) += posNE_change(1);
 	}
 
 	// apply the change in position to our newest position estimate
@@ -145,7 +149,7 @@ bool Ekf::resetPosition()
 void Ekf::resetHeight()
 {
 	// Get the most recent GPS data
-	gpsSample gps_newest = _gps_buffer.get_newest();
+	const gpsSample& gps_newest = _gps_buffer.get_newest();
 
 	// store the current vertical position and velocity for reference so we can calculate and publish the reset amount
 	float old_vert_pos = _state.pos(2);
@@ -158,8 +162,12 @@ void Ekf::resetHeight()
 		rangeSample range_newest = _range_buffer.get_newest();
 
 		if (_time_last_imu - range_newest.time_us < 2 * RNG_MAX_INTERVAL) {
+			// correct the range data for position offset relative to the IMU
+			Vector3f pos_offset_body = _params.rng_pos_body - _params.imu_pos_body;
+			Vector3f pos_offset_earth = _R_to_earth * pos_offset_body;
+			range_newest.rng += pos_offset_earth(2) / _R_rng_to_earth_2_2;
 			// calculate the new vertical position using range sensor
-			float new_pos_down = _hgt_sensor_offset - range_newest.rng;
+			float new_pos_down = _hgt_sensor_offset - range_newest.rng * _R_rng_to_earth_2_2;
 
 			// update the state and assoicated variance
 			_state.pos(2) = new_pos_down;
@@ -174,7 +182,7 @@ void Ekf::resetHeight()
 			vert_pos_reset = true;
 
 			// reset the baro offset which is subtracted from the baro reading if we need to use it as a backup
-			baroSample baro_newest = _baro_buffer.get_newest();
+			const baroSample& baro_newest = _baro_buffer.get_newest();
 			_baro_hgt_offset = baro_newest.hgt + _state.pos(2);
 
 		} else {
@@ -184,7 +192,7 @@ void Ekf::resetHeight()
 
 	} else if (_control_status.flags.baro_hgt) {
 		// initialize vertical position with newest baro measurement
-		baroSample baro_newest = _baro_buffer.get_newest();
+		const baroSample& baro_newest = _baro_buffer.get_newest();
 
 		if (_time_last_imu - baro_newest.time_us < 2 * BARO_MAX_INTERVAL) {
 			_state.pos(2) = _hgt_sensor_offset - baro_newest.hgt + _baro_hgt_offset;
@@ -217,7 +225,7 @@ void Ekf::resetHeight()
 			vert_pos_reset = true;
 
 			// reset the baro offset which is subtracted from the baro reading if we need to use it as a backup
-			baroSample baro_newest = _baro_buffer.get_newest();
+			const baroSample& baro_newest = _baro_buffer.get_newest();
 			_baro_hgt_offset = baro_newest.hgt + _state.pos(2);
 
 		} else {
@@ -226,13 +234,15 @@ void Ekf::resetHeight()
 
 	} else if (_control_status.flags.ev_hgt) {
 		// initialize vertical position with newest measurement
-		extVisionSample ev_newest = _ext_vision_buffer.get_newest();
+		const extVisionSample& ev_newest = _ext_vision_buffer.get_newest();
 
 		// use the most recent data if it's time offset from the fusion time horizon is smaller
 		int32_t dt_newest = ev_newest.time_us - _imu_sample_delayed.time_us;
 		int32_t dt_delayed = _ev_sample_delayed.time_us - _imu_sample_delayed.time_us;
+
 		if (std::abs(dt_newest) < std::abs(dt_delayed)) {
 			_state.pos(2) = ev_newest.posNED(2);
+
 		} else {
 			_state.pos(2) = _ev_sample_delayed.posNED(2);
 		}
@@ -260,6 +270,7 @@ void Ekf::resetHeight()
 		P[6][6] = 10.0f;
 
 	}
+
 	vert_vel_reset = true;
 
 	// store the reset amount and time to be published
@@ -284,21 +295,14 @@ void Ekf::resetHeight()
 	}
 
 	// add the reset amount to the output observer buffered data
-	outputSample output_states;
-	unsigned output_length = _output_buffer.get_length();
-	for (unsigned i=0; i < output_length; i++) {
-		output_states = _output_buffer.get_from_index(i);
-
+	for (uint8_t i = 0; i < _output_buffer.get_length(); i++) {
 		if (vert_pos_reset) {
-			output_states.pos(2) += _state_reset_status.posD_change;
+			_output_buffer[i].pos(2) += _state_reset_status.posD_change;
 		}
 
 		if (vert_vel_reset) {
-			output_states.vel(2) += _state_reset_status.velD_change;
+			_output_buffer[i].vel(2) += _state_reset_status.velD_change;
 		}
-
-		_output_buffer.push_to_index(i,output_states);
-
 	}
 }
 
@@ -306,24 +310,20 @@ void Ekf::resetHeight()
 void Ekf::alignOutputFilter()
 {
 	// calculate the quaternion delta between the output and EKF quaternions at the EKF fusion time horizon
-	Quaternion quat_inv = _state.quat_nominal.inversed();
-	Quaternion q_delta =  _output_sample_delayed.quat_nominal * quat_inv;
+	Quatf q_delta = _state.quat_nominal.inversed() * _output_sample_delayed.quat_nominal;
 	q_delta.normalize();
 
 	// calculate the velocity and posiiton deltas between the output and EKF at the EKF fusion time horizon
-	Vector3f vel_delta = _state.vel - _output_sample_delayed.vel;
-	Vector3f pos_delta = _state.pos - _output_sample_delayed.pos;
+	const Vector3f vel_delta = _state.vel - _output_sample_delayed.vel;
+	const Vector3f pos_delta = _state.pos - _output_sample_delayed.pos;
 
 	// loop through the output filter state history and add the deltas
-	outputSample output_states;
-	unsigned output_length = _output_buffer.get_length();
-	for (unsigned i=0; i < output_length; i++) {
-		output_states = _output_buffer.get_from_index(i);
-		output_states.quat_nominal *= q_delta;
-		output_states.quat_nominal.normalize();
-		output_states.vel += vel_delta;
-		output_states.pos += pos_delta;
-		_output_buffer.push_to_index(i,output_states);
+	// Note q1 *= q2 is equivalent to q1 = q2 * q1
+	for (uint8_t i = 0; i < _output_buffer.get_length(); i++) {
+		_output_buffer[i].quat_nominal *= q_delta;
+		_output_buffer[i].quat_nominal.normalize();
+		_output_buffer[i].vel += vel_delta;
+		_output_buffer[i].pos += pos_delta;
 	}
 }
 
@@ -338,10 +338,10 @@ bool Ekf::realignYawGPS()
 		bool badVelInnov = ((_vel_pos_test_ratio[0] > 1.0f) || (_vel_pos_test_ratio[1] > 1.0f)) && _control_status.flags.gps;
 
 		// calculate GPS course over ground angle
-		float gpsCOG = atan2f(_gps_sample_delayed.vel(1),_gps_sample_delayed.vel(0));
+		float gpsCOG = atan2f(_gps_sample_delayed.vel(1), _gps_sample_delayed.vel(0));
 
 		// calculate course yaw angle
-		float ekfGOG = atan2f(_state.vel(1),_state.vel(0));
+		float ekfGOG = atan2f(_state.vel(1), _state.vel(0));
 
 		// Check the EKF and GPS course over ground for consistency
 		float courseYawError = gpsCOG - ekfGOG;
@@ -365,7 +365,7 @@ bool Ekf::realignYawGPS()
 			}
 
 			// save a copy of the quaternion state for later use in calculating the amount of reset change
-			Quaternion quat_before_reset = _state.quat_nominal;
+			Quatf quat_before_reset = _state.quat_nominal;
 
 			// calculate the variance for the rotation estimate expressed as a rotation vector
 			// this will be used later to reset the quaternion state covariances
@@ -375,7 +375,7 @@ bool Ekf::realignYawGPS()
 			_R_to_earth = quat_to_invrotmat(_state.quat_nominal);
 
 			// get quaternion from existing filter states and calculate roll, pitch and yaw angles
-			matrix::Euler<float> euler321(_state.quat_nominal);
+			Eulerf euler321(_state.quat_nominal);
 
 			// apply yaw correction
 			if (!_flt_mag_align_complete) {
@@ -384,17 +384,22 @@ bool Ekf::realignYawGPS()
 				euler321(2) += courseYawError;
 				_flt_mag_align_complete = true;
 
-			} else {
-				euler321(2) = atan2f(_gps_sample_delayed.vel(1) , _gps_sample_delayed.vel(0));
+			} else if (_control_status.flags.wind) {
+				// we have previously aligned yaw in-flight and have wind estimates so set the yaw such that the vehicle nose is
+				// aligned with the wind relative GPS velocity vector
+				euler321(2) = atan2f((_gps_sample_delayed.vel(1) - _state.wind_vel(1)) , (_gps_sample_delayed.vel(0) - _state.wind_vel(0)));
 
-				// Reset the wind states since they have probably learned faulty estimates 
-				resetWindStates();
-				resetWindCovariance();
+			} else {
+				// we don't have wind estimates, so align yaw to the GPS velocity vector
+				euler321(2) = atan2f(_gps_sample_delayed.vel(1) , _gps_sample_delayed.vel(0));
 
 			}
 
 			// calculate new filter quaternion states using corected yaw angle
-			_state.quat_nominal = Quaternion(euler321);
+			_state.quat_nominal = Quatf(euler321);
+
+			// If heading was bad, then we alos need to reset the velocity and position states
+			_velpos_reset_request = badMagYaw;
 
 			// update transformation matrix from body to world frame using the current state estimate
 			_R_to_earth = quat_to_invrotmat(_state.quat_nominal);
@@ -419,33 +424,44 @@ bool Ekf::realignYawGPS()
 				P[index][index] = sq(_params.mag_noise);
 			}
 
+			// record the start time for the magnetic field alignment
+			_flt_mag_align_start_time = _imu_sample_delayed.time_us;
 			// calculate the amount that the quaternion has changed by
-			_state_reset_status.quat_change = _state.quat_nominal * quat_before_reset.inversed();
+			_state_reset_status.quat_change = quat_before_reset.inversed() * _state.quat_nominal;
 
 			// add the reset amount to the output observer buffered data
-			outputSample output_states;
-			unsigned output_length = _output_buffer.get_length();
-			for (unsigned i=0; i < output_length; i++) {
-				output_states = _output_buffer.get_from_index(i);
-				output_states.quat_nominal *= _state_reset_status.quat_change;
-				_output_buffer.push_to_index(i,output_states);
+			// Note q1 *= q2 is equivalent to q1 = q2 * q1
+			for (uint8_t i = 0; i < _output_buffer.get_length(); i++) {
+				_output_buffer[i].quat_nominal *= _state_reset_status.quat_change;
 			}
 
 			// apply the change in attitude quaternion to our newest quaternion estimate
 			// which was already taken out from the output buffer
-			_output_new.quat_nominal *= _state_reset_status.quat_change;
+			_output_new.quat_nominal = _state_reset_status.quat_change * _output_new.quat_nominal;
 
 			// capture the reset event
 			_state_reset_status.quat_counter++;
 
-			// the alignment using GPS has been successful
-			_control_status.flags.yaw_align = true;
 			return true;
 
 		} else {
-			// attempt a normal alignment using the magnetometer
-			return resetMagHeading(_mag_sample_delayed.mag);
+			// align mag states only
 
+			// calculate initial earth magnetic field states
+			_state.mag_I = _R_to_earth * _mag_sample_delayed.mag;
+
+			// reset the corresponding rows and columns in the covariance matrix and set the variances on the magnetic field states to the measurement variance
+			zeroRows(P, 16, 21);
+			zeroCols(P, 16, 21);
+
+			for (uint8_t index = 16; index <= 21; index ++) {
+				P[index][index] = sq(_params.mag_noise);
+			}
+
+			// record the start time for the magnetic field alignment
+			_flt_mag_align_start_time = _imu_sample_delayed.time_us;
+
+			return true;
 		}
 
 	} else {
@@ -459,7 +475,8 @@ bool Ekf::realignYawGPS()
 bool Ekf::resetMagHeading(Vector3f &mag_init)
 {
 	// save a copy of the quaternion state for later use in calculating the amount of reset change
-	Quaternion quat_before_reset = _state.quat_nominal;
+	Quatf quat_before_reset = _state.quat_nominal;
+	Quatf quat_after_reset = _state.quat_nominal;
 
 	// calculate the variance for the rotation estimate expressed as a rotation vector
 	// this will be used later to reset the quaternion state covariances
@@ -474,50 +491,33 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 		// use a 321 sequence
 
 		// rotate the magnetometer measurement into earth frame
-		matrix::Euler<float> euler321(_state.quat_nominal);
+		Eulerf euler321(_state.quat_nominal);
 
 		// Set the yaw angle to zero and calculate the rotation matrix from body to earth frame
 		euler321(2) = 0.0f;
-		matrix::Dcm<float> R_to_earth(euler321);
+		Dcmf R_to_earth(euler321);
 
 		// calculate the observed yaw angle
-		if (_params.fusion_mode & MASK_USE_EVYAW ) {
+		if (_params.fusion_mode & MASK_USE_EVYAW) {
 			// convert the observed quaternion to a rotation matrix
-			matrix::Dcm<float> R_to_earth_ev(_ev_sample_delayed.quat);	// transformation matrix from body to world frame
+			Dcmf R_to_earth_ev(_ev_sample_delayed.quat);	// transformation matrix from body to world frame
 			// calculate the yaw angle for a 312 sequence
-			euler321(2) = atan2f(R_to_earth_ev(1, 0) , R_to_earth_ev(0, 0));
-		} else if ((_params.mag_field_vertical == 1) || (_params.mag_field_vertical == 2)) {
-			// force use of the parameter defined yaw angle
-			euler321(2) = math::radians(_params.mag_yaw_ground);
-		} else {
+			euler321(2) = atan2f(R_to_earth_ev(1, 0), R_to_earth_ev(0, 0));
+
+		} else if (_params.mag_fusion_type <= MAG_FUSE_TYPE_AUTOFW) {
 			// rotate the magnetometer measurements into earth frame using a zero yaw angle
 			Vector3f mag_earth_pred = R_to_earth * _mag_sample_delayed.mag;
 			// the angle of the projection onto the horizontal gives the yaw angle
 			euler321(2) = -atan2f(mag_earth_pred(1), mag_earth_pred(0)) + _mag_declination;
+
+		} else {
+			// there is no yaw observation
+			return false;
 		}
 
 		// calculate initial quaternion states for the ekf
 		// we don't change the output attitude to avoid jumps
-		_state.quat_nominal = Quaternion(euler321);
-
-		// calculate the amount that the quaternion has changed by
-		_state_reset_status.quat_change = _state.quat_nominal * quat_before_reset.inversed();
-
-		// add the reset amount to the output observer buffered data
-		outputSample output_states;
-		unsigned output_length = _output_buffer.get_length();
-		for (unsigned i=0; i < output_length; i++) {
-			output_states = _output_buffer.get_from_index(i);
-			output_states.quat_nominal *= _state_reset_status.quat_change;
-			_output_buffer.push_to_index(i,output_states);
-		}
-
-		// apply the change in attitude quaternion to our newest quaternion estimate
-		// which was already taken out from the output buffer
-		_output_new.quat_nominal *= _state_reset_status.quat_change;
-
-		// capture the reset event
-		_state_reset_status.quat_counter++;
+		quat_after_reset = Quatf(euler321);
 
 	} else {
 		// use a 312 sequence
@@ -525,9 +525,9 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 		// Calculate the 312 sequence euler angles that rotate from earth to body frame
 		// See http://www.atacolorado.com/eulersequences.doc
 		Vector3f euler312;
-		euler312(0) = atan2f(-_R_to_earth(0, 1) , _R_to_earth(1, 1)); // first rotation (yaw)
+		euler312(0) = atan2f(-_R_to_earth(0, 1), _R_to_earth(1, 1));  // first rotation (yaw)
 		euler312(1) = asinf(_R_to_earth(2, 1)); // second rotation (roll)
-		euler312(2) = atan2f(-_R_to_earth(2, 0) , _R_to_earth(2, 2)); // third rotation (pitch)
+		euler312(2) = atan2f(-_R_to_earth(2, 0), _R_to_earth(2, 2));  // third rotation (pitch)
 
 		// Set the first rotation (yaw) to zero and calculate the rotation matrix from body to earth frame
 		euler312(0) = 0.0f;
@@ -540,7 +540,7 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 		float s0 = sinf(euler312(0));
 		float c0 = cosf(euler312(0));
 
-		matrix::Dcm<float> R_to_earth;
+		Dcmf R_to_earth;
 		R_to_earth(0, 0) = c0 * c2 - s0 * s1 * s2;
 		R_to_earth(1, 1) = c0 * c1;
 		R_to_earth(2, 2) = c2 * c1;
@@ -554,17 +554,19 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 		// calculate the observed yaw angle
 		if (_params.fusion_mode & MASK_USE_EVYAW) {
 			// convert the observed quaternion to a rotation matrix
-			matrix::Dcm<float> R_to_earth_ev(_ev_sample_delayed.quat);	// transformation matrix from body to world frame
+			Dcmf R_to_earth_ev(_ev_sample_delayed.quat);	// transformation matrix from body to world frame
 			// calculate the yaw angle for a 312 sequence
-			euler312(0) = atan2f(-R_to_earth_ev(0, 1) , R_to_earth_ev(1, 1));
-		} else if ((_params.mag_field_vertical == 1) || (_params.mag_field_vertical == 2)) {
-			// force use of the parameter defined yaw angle
-			euler312(0) = math::radians(_params.mag_yaw_ground);
-		} else {
+			euler312(0) = atan2f(-R_to_earth_ev(0, 1), R_to_earth_ev(1, 1));
+
+		} else if (_params.mag_fusion_type <= MAG_FUSE_TYPE_AUTOFW) {
 			// rotate the magnetometer measurements into earth frame using a zero yaw angle
 			Vector3f mag_earth_pred = R_to_earth * _mag_sample_delayed.mag;
 			// the angle of the projection onto the horizontal gives the yaw angle
 			euler312(0) = -atan2f(mag_earth_pred(1), mag_earth_pred(0)) + _mag_declination;
+
+		} else {
+			// there is no yaw observation
+			return false;
 		}
 
 		// re-calculate the rotation matrix using the updated yaw angle
@@ -582,26 +584,12 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 
 		// calculate initial quaternion states for the ekf
 		// we don't change the output attitude to avoid jumps
-		_state.quat_nominal = Quaternion(R_to_earth);
+		quat_after_reset = Quatf(R_to_earth);
 	}
 
-	// update transformation matrix from body to world frame using the current estimate
-	_R_to_earth = quat_to_invrotmat(_state.quat_nominal);
-
-	// update the yaw angle variance using the variance of the measurement
-	if (_params.fusion_mode & MASK_USE_EVYAW) {
-		// using error estimate from external vision data
-		angle_err_var_vec(2) = sq(fmaxf(_ev_sample_delayed.angErr, 1.0e-2f));
-	} else {
-		// using magnetic heading tuning parameter
-		angle_err_var_vec(2) = sq(fmaxf(_params.mag_heading_noise, 1.0e-2f));
-	}
-
-	// reset the quaternion covariances using the rotation vector variances
-	initialiseQuatCovariances(angle_err_var_vec);
-
-	// calculate initial earth magnetic field states
-	_state.mag_I = _R_to_earth * mag_init;
+	// set the earth magnetic field states using the updated rotation
+	Dcmf _R_to_earth_after = quat_to_invrotmat(quat_after_reset);
+	_state.mag_I = _R_to_earth_after * mag_init;
 
 	// reset the corresponding rows and columns in the covariance matrix and set the variances on the magnetic field states to the measurement variance
 	zeroRows(P, 16, 21);
@@ -611,24 +599,72 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 		P[index][index] = sq(_params.mag_noise);
 	}
 
-	// calculate the amount that the quaternion has changed by
-	_state_reset_status.quat_change = _state.quat_nominal * quat_before_reset.inversed();
+	// record the time for the magnetic field alignment event
+	_flt_mag_align_start_time = _imu_sample_delayed.time_us;
 
-	// add the reset amount to the output observer buffered data
-	outputSample output_states;
-	unsigned output_length = _output_buffer.get_length();
-	for (unsigned i=0; i < output_length; i++) {
-		output_states = _output_buffer.get_from_index(i);
-		output_states.quat_nominal *= _state_reset_status.quat_change;
-		_output_buffer.push_to_index(i,output_states);
+	// calculate the amount that the quaternion has changed by
+	Quatf q_error =  quat_before_reset.inversed() * quat_after_reset;
+	q_error.normalize();
+
+	// convert the quaternion delta to a delta angle
+	Vector3f delta_ang_error;
+	float scalar;
+
+	if (q_error(0) >= 0.0f) {
+		scalar = -2.0f;
+
+	} else {
+		scalar = 2.0f;
 	}
 
-	// apply the change in attitude quaternion to our newest quaternion estimate
-	// which was already taken out from the output buffer
-	_output_new.quat_nominal *= _state_reset_status.quat_change;
+	delta_ang_error(0) = scalar * q_error(1);
+	delta_ang_error(1) = scalar * q_error(2);
+	delta_ang_error(2) = scalar * q_error(3);
 
-	// capture the reset event
-	_state_reset_status.quat_counter++;
+
+	// update the quaternion state estimates and corresponding covariances only if the change in angle has been large
+	if (delta_ang_error.norm() > math::radians(15.0f)) {
+		// update quaternion states
+		_state.quat_nominal = quat_after_reset;
+
+		// record the state change
+		_state_reset_status.quat_change = q_error;
+
+		// update transformation matrix from body to world frame using the current estimate
+		_R_to_earth = quat_to_invrotmat(_state.quat_nominal);
+
+		// reset the rotation from the EV to EKF frame of reference if it is being used
+		if ((_params.fusion_mode & MASK_ROTATE_EV) && (_params.fusion_mode & MASK_USE_EVPOS) && !(_params.fusion_mode & MASK_USE_EVYAW)) {
+			resetExtVisRotMat();
+		}
+
+		// update the yaw angle variance using the variance of the measurement
+		if (_params.fusion_mode & MASK_USE_EVYAW) {
+			// using error estimate from external vision data
+			angle_err_var_vec(2) = sq(fmaxf(_ev_sample_delayed.angErr, 1.0e-2f));
+
+		} else if (_params.mag_fusion_type <= MAG_FUSE_TYPE_AUTOFW) {
+			// using magnetic heading tuning parameter
+			angle_err_var_vec(2) = sq(fmaxf(_params.mag_heading_noise, 1.0e-2f));
+		}
+
+		// reset the quaternion covariances using the rotation vector variances
+		initialiseQuatCovariances(angle_err_var_vec);
+
+		// add the reset amount to the output observer buffered data
+		for (uint8_t i = 0; i < _output_buffer.get_length(); i++) {
+			// Note q1 *= q2 is equivalent to q1 = q2 * q1
+			_output_buffer[i].quat_nominal *= _state_reset_status.quat_change;
+		}
+
+		// apply the change in attitude quaternion to our newest quaternion estimate
+		// which was already taken out from the output buffer
+		_output_new.quat_nominal = _state_reset_status.quat_change * _output_new.quat_nominal;
+
+		// capture the reset event
+		_state_reset_status.quat_counter++;
+
+	}
 
 	return true;
 }
@@ -637,7 +673,10 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 void Ekf::calcMagDeclination()
 {
 	// set source of magnetic declination for internal use
-	if (_params.mag_declination_source & MASK_USE_GEO_DECL) {
+	if (_flt_mag_align_complete) {
+		// Use value consistent with earth field state
+		_mag_declination = atan2f(_state.mag_I(1), _state.mag_I(0));
+	} else if (_params.mag_declination_source & MASK_USE_GEO_DECL) {
 		// use parameter value until GPS is available, then use value returned by geo library
 		if (_NED_origin_initialised) {
 			_mag_declination = _mag_declination_gps;
@@ -717,6 +756,12 @@ void Ekf::get_vel_pos_innov(float vel_pos_innov[6])
 	memcpy(vel_pos_innov, _vel_pos_innov, sizeof(float) * 6);
 }
 
+// gets the innovations of the earth magnetic field measurements
+void Ekf::get_aux_vel_innov(float aux_vel_innov[2])
+{
+	memcpy(aux_vel_innov, _aux_vel_innov, sizeof(float) * 2);
+}
+
 // writes the innovations of the earth magnetic field measurements
 void Ekf::get_mag_innov(float mag_innov[3])
 {
@@ -726,13 +771,13 @@ void Ekf::get_mag_innov(float mag_innov[3])
 // gets the innovations of the airspeed measnurement
 void Ekf::get_airspeed_innov(float *airspeed_innov)
 {
-	memcpy(airspeed_innov,&_airspeed_innov, sizeof(float));
+	memcpy(airspeed_innov, &_airspeed_innov, sizeof(float));
 }
 
 // gets the innovations of the synthetic sideslip measurements
 void Ekf::get_beta_innov(float *beta_innov)
 {
-	memcpy(beta_innov,&_beta_innov, sizeof(float));
+	memcpy(beta_innov, &_beta_innov, sizeof(float));
 }
 
 // gets the innovations of the heading measurement
@@ -818,9 +863,9 @@ void Ekf::get_state_delayed(float *state)
 void Ekf::get_accel_bias(float bias[3])
 {
 	float temp[3];
-	temp[0] = _state.accel_bias(0) /_dt_ekf_avg;
-	temp[1] = _state.accel_bias(1) /_dt_ekf_avg;
-	temp[2] = _state.accel_bias(2) /_dt_ekf_avg;
+	temp[0] = _state.accel_bias(0) / _dt_ekf_avg;
+	temp[1] = _state.accel_bias(1) / _dt_ekf_avg;
+	temp[2] = _state.accel_bias(2) / _dt_ekf_avg;
 	memcpy(bias, temp, 3 * sizeof(float));
 }
 
@@ -828,9 +873,9 @@ void Ekf::get_accel_bias(float bias[3])
 void Ekf::get_gyro_bias(float bias[3])
 {
 	float temp[3];
-	temp[0] = _state.gyro_bias(0) /_dt_ekf_avg;
-	temp[1] = _state.gyro_bias(1) /_dt_ekf_avg;
-	temp[2] = _state.gyro_bias(2) /_dt_ekf_avg;
+	temp[0] = _state.gyro_bias(0) / _dt_ekf_avg;
+	temp[1] = _state.gyro_bias(1) / _dt_ekf_avg;
+	temp[2] = _state.gyro_bias(2) / _dt_ekf_avg;
 	memcpy(bias, temp, 3 * sizeof(float));
 }
 
@@ -878,7 +923,11 @@ void Ekf::get_ekf_gpos_accuracy(float *ekf_eph, float *ekf_epv, bool *dead_recko
 	// TODO - allow for baro drift in vertical position error
 	float hpos_err;
 	float vpos_err;
-	bool vel_pos_aiding = (_control_status.flags.gps || _control_status.flags.opt_flow || _control_status.flags.ev_pos);
+	bool vel_pos_aiding = (_control_status.flags.gps ||
+			       _control_status.flags.opt_flow ||
+			       _control_status.flags.ev_pos ||
+			       (_control_status.flags.fuse_beta && _control_status.flags.fuse_aspd));
+
 	if (vel_pos_aiding && _NED_origin_initialised) {
 		hpos_err = sqrtf(P[7][7] + P[8][8] + sq(_gps_origin_eph));
 		vpos_err = sqrtf(P[9][9] + sq(_gps_origin_epv));
@@ -893,7 +942,7 @@ void Ekf::get_ekf_gpos_accuracy(float *ekf_eph, float *ekf_epv, bool *dead_recko
 	// The reason is that complete rejection of measurements is often casued by heading misalignment or inertial sensing errors
 	// and using state variances for accuracy reporting is overly optimistic in these situations
 	if (_is_dead_reckoning && (_control_status.flags.gps || _control_status.flags.ev_pos)) {
-		hpos_err = math::max(hpos_err, sqrtf(_vel_pos_innov[3]*_vel_pos_innov[3] + _vel_pos_innov[4]*_vel_pos_innov[4]));
+		hpos_err = math::max(hpos_err, sqrtf(_vel_pos_innov[3] * _vel_pos_innov[3] + _vel_pos_innov[4] * _vel_pos_innov[4]));
 
 	}
 
@@ -908,7 +957,11 @@ void Ekf::get_ekf_lpos_accuracy(float *ekf_eph, float *ekf_epv, bool *dead_recko
 	// TODO - allow for baro drift in vertical position error
 	float hpos_err;
 	float vpos_err;
-	bool vel_pos_aiding = (_control_status.flags.gps || _control_status.flags.opt_flow || _control_status.flags.ev_pos);
+	bool vel_pos_aiding = (_control_status.flags.gps ||
+			       _control_status.flags.opt_flow ||
+			       _control_status.flags.ev_pos ||
+			       (_control_status.flags.fuse_beta && _control_status.flags.fuse_aspd));
+
 	if (vel_pos_aiding && _NED_origin_initialised) {
 		hpos_err = sqrtf(P[7][7] + P[8][8]);
 		vpos_err = sqrtf(P[9][9]);
@@ -923,7 +976,7 @@ void Ekf::get_ekf_lpos_accuracy(float *ekf_eph, float *ekf_epv, bool *dead_recko
 	// The reason is that complete rejection of measurements is often casued by heading misalignment or inertial sensing errors
 	// and using state variances for accuracy reporting is overly optimistic in these situations
 	if (_is_dead_reckoning && (_control_status.flags.gps || _control_status.flags.ev_pos)) {
-		hpos_err = math::max(hpos_err, sqrtf(_vel_pos_innov[3]*_vel_pos_innov[3] + _vel_pos_innov[4]*_vel_pos_innov[4]));
+		hpos_err = math::max(hpos_err, sqrtf(_vel_pos_innov[3] * _vel_pos_innov[3] + _vel_pos_innov[4] * _vel_pos_innov[4]));
 
 	}
 
@@ -937,7 +990,11 @@ void Ekf::get_ekf_vel_accuracy(float *ekf_evh, float *ekf_evv, bool *dead_reckon
 {
 	float hvel_err;
 	float vvel_err;
-	bool vel_pos_aiding = (_control_status.flags.gps || _control_status.flags.opt_flow || _control_status.flags.ev_pos);
+	bool vel_pos_aiding = (_control_status.flags.gps ||
+			       _control_status.flags.opt_flow ||
+			       _control_status.flags.ev_pos ||
+			       (_control_status.flags.fuse_beta && _control_status.flags.fuse_aspd));
+
 	if (vel_pos_aiding && _NED_origin_initialised) {
 		hvel_err = sqrtf(P[4][4] + P[5][5]);
 		vvel_err = sqrtf(P[6][6]);
@@ -952,14 +1009,19 @@ void Ekf::get_ekf_vel_accuracy(float *ekf_evh, float *ekf_evv, bool *dead_reckon
 	// The reason is that complete rejection of measurements is often caused by heading misalignment or inertial sensing errors
 	// and using state variances for accuracy reporting is overly optimistic in these situations
 	float vel_err_conservative = 0.0f;
+
 	if (_is_dead_reckoning) {
 		if (_control_status.flags.opt_flow) {
 			float gndclearance = math::max(_params.rng_gnd_clearance, 0.1f);
-			vel_err_conservative = math::max((_terrain_vpos - _state.pos(2)), gndclearance) * sqrtf(_flow_innov[0]*_flow_innov[0] + _flow_innov[1]*_flow_innov[1]);
+			vel_err_conservative = math::max((_terrain_vpos - _state.pos(2)),
+							 gndclearance) * sqrtf(_flow_innov[0] * _flow_innov[0] + _flow_innov[1] * _flow_innov[1]);
 		}
+
 		if (_control_status.flags.gps || _control_status.flags.ev_pos) {
-			vel_err_conservative = math::max(vel_err_conservative, sqrtf(_vel_pos_innov[0]*_vel_pos_innov[0] + _vel_pos_innov[1]*_vel_pos_innov[1]));
+			vel_err_conservative = math::max(vel_err_conservative,
+							 sqrtf(_vel_pos_innov[0] * _vel_pos_innov[0] + _vel_pos_innov[1] * _vel_pos_innov[1]));
 		}
+
 		hvel_err = math::max(hvel_err, vel_err_conservative);
 	}
 
@@ -968,27 +1030,94 @@ void Ekf::get_ekf_vel_accuracy(float *ekf_evh, float *ekf_evv, bool *dead_reckon
 	memcpy(dead_reckoning, &_is_dead_reckoning, sizeof(bool));
 }
 
+/*
+Returns the following vehicle control limits required by the estimator.
+vxy_max : Maximum ground relative horizontal speed (metres/sec). NaN when no limiting required.
+limit_hagl : Boolean true when height above ground needs to be controlled to remain between optical flow focus and rang efinder max range limits.
+*/
+void Ekf::get_ekf_ctrl_limits(float *vxy_max, bool *limit_hagl)
+{
+	bool flow_limit_hagl;
+
+	// If relying on optical flow for navigation we need to keep within flow and range sensor limits
+	bool relying_on_optical_flow = _control_status.flags.opt_flow && !(_control_status.flags.gps || _control_status.flags.ev_pos);
+	if (relying_on_optical_flow) {
+		// Allow ground relative velocity to use 50% of available flow sensor range to allow for angular motion
+		_flow_gnd_spd_max = 0.5f * _params.flow_rate_max * (_terrain_vpos - _state.pos(2));
+		_flow_gnd_spd_max = fmaxf(_flow_gnd_spd_max , 0.0f);
+		flow_limit_hagl = true;
+
+	} else if (_control_status.flags.opt_flow) {
+		// We are using optical flow but not reliant on it
+		// Release the speed limit as the vehicle climbs, but do not reduce it when it descends
+		float lower_limit = fmaxf(0.5f * _params.flow_rate_max * (_terrain_vpos - _state.pos(2)) , 0.0f);
+		_flow_gnd_spd_max = fmaxf(_flow_gnd_spd_max , lower_limit);
+		flow_limit_hagl = false;
+
+	} else {
+		_flow_gnd_spd_max = NAN;
+		flow_limit_hagl = false;
+
+	}
+
+	memcpy(vxy_max, &_flow_gnd_spd_max, sizeof(float));
+	memcpy(limit_hagl, &flow_limit_hagl, sizeof(bool));
+
+}
+
+bool Ekf::reset_imu_bias()
+{
+	if (_imu_sample_delayed.time_us - _last_imu_bias_cov_reset_us < (uint64_t)10e6) {
+		return false;
+
+	}
+
+	// Zero the delta angle and delta velocity bias states
+	_state.gyro_bias.zero();
+	_state.accel_bias.zero();
+
+	// Zero the corresponding covariances
+	zeroCols(P, 10, 15);
+	zeroRows(P, 10, 15);
+
+	// Set the corresponding variances to the values use for initial alignment
+	float dt = 0.001f * (float)FILTER_UPDATE_PERIOD_MS;
+	P[12][12] = P[11][11] = P[10][10] = sq(_params.switch_on_gyro_bias * dt);
+	P[15][15] = P[14][14] = P[13][13] = sq(_params.switch_on_accel_bias * dt);
+	_last_imu_bias_cov_reset_us = _imu_sample_delayed.time_us;
+
+	// Set previous frame values
+	_prev_dvel_bias_var(0) = P[13][13];
+	_prev_dvel_bias_var(1) = P[14][14];
+	_prev_dvel_bias_var(2) = P[15][15];
+
+	return true;
+
+}
+
 // get EKF innovation consistency check status information comprising of:
 // status - a bitmask integer containing the pass/fail status for each EKF measurement innovation consistency check
 // Innovation Test Ratios - these are the ratio of the innovation to the acceptance threshold.
 // A value > 1 indicates that the sensor measurement has exceeded the maximum acceptable level and has been rejected by the EKF
 // Where a measurement type is a vector quantity, eg magnetoemter, GPS position, etc, the maximum value is returned.
-void Ekf::get_innovation_test_status(uint16_t *status, float *mag, float *vel, float *pos, float *hgt, float *tas, float *hagl)
+void Ekf::get_innovation_test_status(uint16_t *status, float *mag, float *vel, float *pos, float *hgt, float *tas, float *hagl, float *beta)
 {
 	// return the integer bitmask containing the consistency check pass/fail satus
 	*status = _innov_check_fail_status.value;
 	// return the largest magnetometer innovation test ratio
-	*mag = sqrtf(math::max(_yaw_test_ratio,math::max(math::max(_mag_test_ratio[0],_mag_test_ratio[1]),_mag_test_ratio[2])));
+	*mag = sqrtf(math::max(_yaw_test_ratio, math::max(math::max(_mag_test_ratio[0], _mag_test_ratio[1]), _mag_test_ratio[2])));
 	// return the largest NED velocity innovation test ratio
-	*vel = sqrtf(math::max(math::max(_vel_pos_test_ratio[0],_vel_pos_test_ratio[1]),_vel_pos_test_ratio[2]));
+	*vel = sqrtf(math::max(math::max(_vel_pos_test_ratio[0], _vel_pos_test_ratio[1]), _vel_pos_test_ratio[2]));
 	// return the largest NE position innovation test ratio
-	*pos = sqrtf(math::max(_vel_pos_test_ratio[3],_vel_pos_test_ratio[4]));
+	*pos = sqrtf(math::max(_vel_pos_test_ratio[3], _vel_pos_test_ratio[4]));
 	// return the vertical position innovation test ratio
 	*hgt = sqrtf(_vel_pos_test_ratio[5]);
 	// return the airspeed fusion innovation test ratio
 	*tas = sqrtf(_tas_test_ratio);
 	// return the terrain height innovation test ratio
 	*hagl = sqrtf(_terr_test_ratio);
+	// return the synthetic sideslip innovation test ratio
+	*beta = sqrtf(_beta_test_ratio);
 }
 
 // return a bitmask integer that describes which state estimates are valid
@@ -996,13 +1125,12 @@ void Ekf::get_ekf_soln_status(uint16_t *status)
 {
 	ekf_solution_status soln_status{};
 	soln_status.flags.attitude = _control_status.flags.tilt_align && _control_status.flags.yaw_align && (_fault_status.value == 0);
-	soln_status.flags.velocity_horiz = (_control_status.flags.gps || _control_status.flags.ev_pos || _control_status.flags.opt_flow) && (_fault_status.value == 0);
+	soln_status.flags.velocity_horiz = (_control_status.flags.gps || _control_status.flags.ev_pos || _control_status.flags.opt_flow || (_control_status.flags.fuse_beta && _control_status.flags.fuse_aspd)) && (_fault_status.value == 0);
 	soln_status.flags.velocity_vert = (_control_status.flags.baro_hgt || _control_status.flags.ev_hgt || _control_status.flags.gps_hgt || _control_status.flags.rng_hgt) && (_fault_status.value == 0);
-	soln_status.flags.pos_horiz_rel = (_control_status.flags.gps || _control_status.flags.ev_pos || _control_status.flags.opt_flow) && (_fault_status.value == 0);
+	soln_status.flags.pos_horiz_rel = (_control_status.flags.gps || _control_status.flags.ev_pos || _control_status.flags.opt_flow ) && (_fault_status.value == 0);
 	soln_status.flags.pos_horiz_abs = (_control_status.flags.gps || _control_status.flags.ev_pos) && (_fault_status.value == 0);
 	soln_status.flags.pos_vert_abs = soln_status.flags.velocity_vert;
-	float dummy_var;
-	soln_status.flags.pos_vert_agl = get_terrain_vert_pos(&dummy_var);
+	soln_status.flags.pos_vert_agl = get_terrain_valid();
 	soln_status.flags.const_pos_mode = !soln_status.flags.velocity_horiz;
 	soln_status.flags.pred_pos_horiz_rel = soln_status.flags.pos_horiz_rel;
 	soln_status.flags.pred_pos_horiz_abs = soln_status.flags.pos_vert_abs;
@@ -1010,6 +1138,7 @@ void Ekf::get_ekf_soln_status(uint16_t *status)
 	bool gps_pos_innov_bad = (_vel_pos_test_ratio[3] > 1.0f) || (_vel_pos_test_ratio[4] > 1.0f);
 	bool mag_innov_good = (_mag_test_ratio[0] < 1.0f) && (_mag_test_ratio[1] < 1.0f) && (_mag_test_ratio[2] < 1.0f) && (_yaw_test_ratio < 1.0f);
 	soln_status.flags.gps_glitch = (gps_vel_innov_bad || gps_pos_innov_bad) && mag_innov_good;
+	soln_status.flags.accel_error = _bad_vert_accel_detected;
 	*status = soln_status.value;
 }
 
@@ -1019,6 +1148,7 @@ void Ekf::fuse(float *K, float innovation)
 	for (unsigned i = 0; i < 4; i++) {
 		_state.quat_nominal(i) = _state.quat_nominal(i) - K[i] * innovation;
 	}
+
 	_state.quat_nominal.normalize();
 
 	for (unsigned i = 0; i < 3; i++) {
@@ -1070,41 +1200,70 @@ void Ekf::zeroCols(float (&cov_mat)[_k_num_states][_k_num_states], uint8_t first
 	}
 }
 
+void Ekf::zeroOffDiag(float (&cov_mat)[_k_num_states][_k_num_states], uint8_t first, uint8_t last)
+{
+	// save diagonal elements
+	uint8_t row;
+	float variances[_k_num_states];
+	for (row = first; row <= last; row++) {
+		variances[row] = cov_mat[row][row];
+	}
+
+	// zero rows and columns
+	zeroRows(cov_mat, first, last);
+	zeroCols(cov_mat, first, last);
+
+	// restore diagonals
+	for (row = first; row <= last; row++) {
+		cov_mat[row][row] = variances[row];
+	}
+}
+
+void Ekf::setDiag(float (&cov_mat)[_k_num_states][_k_num_states], uint8_t first, uint8_t last, float variance)
+{
+	// zero rows and columns
+	zeroRows(cov_mat, first, last);
+	zeroCols(cov_mat, first, last);
+
+	// set diagonals
+	uint8_t row;
+	for (row = first; row <= last; row++) {
+		cov_mat[row][row] = variance;
+	}
+
+}
+
 bool Ekf::global_position_is_valid()
 {
-	// return true if the position estimate is valid
-	// TODO implement proper check based on published GPS accuracy, innovation consistency checks and timeout status
-	return (_NED_origin_initialised && ((_time_last_imu - _time_last_gps) < 5e6) && _control_status.flags.gps);
+	// return true if we are not doing unconstrained free inertial navigation and the origin is set
+	return (_NED_origin_initialised && !inertial_dead_reckoning());
 }
 
 // return true if we are totally reliant on inertial dead-reckoning for position
 bool Ekf::inertial_dead_reckoning()
 {
-	bool velPosAiding = (_control_status.flags.gps || _control_status.flags.ev_pos) && ((_time_last_imu - _time_last_pos_fuse <= 1E6) || (_time_last_imu - _time_last_vel_fuse <= 1E6));
-	bool optFlowAiding = _control_status.flags.opt_flow && (_time_last_imu - _time_last_of_fuse <= 1E6);
-	bool airDataAiding = _control_status.flags.wind && (_time_last_imu - _time_last_arsp_fuse <= 1E6);
+	bool velPosAiding = (_control_status.flags.gps || _control_status.flags.ev_pos)
+			    && ((_time_last_imu - _time_last_pos_fuse <= _params.no_aid_timeout_max)
+				|| (_time_last_imu - _time_last_vel_fuse <= _params.no_aid_timeout_max)
+				|| (_time_last_imu - _time_last_delpos_fuse <= _params.no_aid_timeout_max));
+	bool optFlowAiding = _control_status.flags.opt_flow && (_time_last_imu - _time_last_of_fuse <= _params.no_aid_timeout_max);
+	bool airDataAiding = _control_status.flags.wind && (_time_last_imu - _time_last_arsp_fuse <= _params.no_aid_timeout_max) && (_time_last_imu - _time_last_beta_fuse <= _params.no_aid_timeout_max);
 
 	return !velPosAiding && !optFlowAiding && !airDataAiding;
-}
-
-// WINGTRA: return true if velocity test ratio is < 1
-bool Ekf::vel_is_rejected()
-{
-	return _innov_check_fail_status.value & 1;
 }
 
 // perform a vector cross product
 Vector3f EstimatorInterface::cross_product(const Vector3f &vecIn1, const Vector3f &vecIn2)
 {
 	Vector3f vecOut;
-	vecOut(0) = vecIn1(1)*vecIn2(2) - vecIn1(2)*vecIn2(1);
-	vecOut(1) = vecIn1(2)*vecIn2(0) - vecIn1(0)*vecIn2(2);
-	vecOut(2) = vecIn1(0)*vecIn2(1) - vecIn1(1)*vecIn2(0);
+	vecOut(0) = vecIn1(1) * vecIn2(2) - vecIn1(2) * vecIn2(1);
+	vecOut(1) = vecIn1(2) * vecIn2(0) - vecIn1(0) * vecIn2(2);
+	vecOut(2) = vecIn1(0) * vecIn2(1) - vecIn1(1) * vecIn2(0);
 	return vecOut;
 }
 
 // calculate the inverse rotation matrix from a quaternion rotation
-Matrix3f EstimatorInterface::quat_to_invrotmat(const Quaternion& quat)
+Matrix3f EstimatorInterface::quat_to_invrotmat(const Quatf &quat)
 {
 	float q00 = quat(0) * quat(0);
 	float q11 = quat(1) * quat(1);
@@ -1118,15 +1277,15 @@ Matrix3f EstimatorInterface::quat_to_invrotmat(const Quaternion& quat)
 	float q23 = quat(2) * quat(3);
 
 	Matrix3f dcm;
-	dcm(0,0) = q00 + q11 - q22 - q33;
-	dcm(1,1) = q00 - q11 + q22 - q33;
-	dcm(2,2) = q00 - q11 - q22 + q33;
-	dcm(0,1) = 2.0f * (q12 - q03);
-	dcm(0,2) = 2.0f * (q13 + q02);
-	dcm(1,0) = 2.0f * (q12 + q03);
-	dcm(1,2) = 2.0f * (q23 - q01);
-	dcm(2,0) = 2.0f * (q13 - q02);
-	dcm(2,1) = 2.0f * (q23 + q01);
+	dcm(0, 0) = q00 + q11 - q22 - q33;
+	dcm(1, 1) = q00 - q11 + q22 - q33;
+	dcm(2, 2) = q00 - q11 - q22 + q33;
+	dcm(0, 1) = 2.0f * (q12 - q03);
+	dcm(0, 2) = 2.0f * (q13 + q02);
+	dcm(1, 0) = 2.0f * (q12 + q03);
+	dcm(1, 2) = 2.0f * (q23 - q01);
+	dcm(2, 0) = 2.0f * (q13 - q02);
+	dcm(2, 1) = 2.0f * (q23 + q01);
 
 	return dcm;
 }
@@ -1135,12 +1294,14 @@ Matrix3f EstimatorInterface::quat_to_invrotmat(const Quaternion& quat)
 Vector3f Ekf::calcRotVecVariances()
 {
 	Vector3f rot_var_vec;
-	float q0,q1,q2,q3;
+	float q0, q1, q2, q3;
+
 	if (_state.quat_nominal(0) >= 0.0f) {
 		q0 = _state.quat_nominal(0);
 		q1 = _state.quat_nominal(1);
 		q2 = _state.quat_nominal(2);
 		q3 = _state.quat_nominal(3);
+
 	} else {
 		q0 = -_state.quat_nominal(0);
 		q1 = -_state.quat_nominal(1);
@@ -1186,6 +1347,7 @@ void Ekf::initialiseQuatCovariances(Vector3f &rot_vec_var)
 		q1 = _state.quat_nominal(1);
 		q2 = _state.quat_nominal(2);
 		q3 = _state.quat_nominal(3);
+
 	} else {
 		q0 = -_state.quat_nominal(0);
 		q1 = -_state.quat_nominal(1);
@@ -1273,17 +1435,166 @@ void Ekf::initialiseQuatCovariances(Vector3f &rot_vec_var)
 		P[0][2] = 0.0f;
 		P[0][3] = 0.0f;
 		P[1][0] = 0.0f;
-		P[1][1] = 0.25f*rot_vec_var(0);
+		P[1][1] = 0.25f * rot_vec_var(0);
 		P[1][2] = 0.0f;
 		P[1][3] = 0.0f;
 		P[2][0] = 0.0f;
 		P[2][1] = 0.0f;
-		P[2][2] = 0.25f*rot_vec_var(1);
+		P[2][2] = 0.25f * rot_vec_var(1);
 		P[2][3] = 0.0f;
 		P[3][0] = 0.0f;
 		P[3][1] = 0.0f;
 		P[3][2] = 0.0f;
-		P[3][3] = 0.25f*rot_vec_var(2);
+		P[3][3] = 0.25f * rot_vec_var(2);
 
 	}
+}
+
+void Ekf::setControlBaroHeight()
+{
+	_control_status.flags.baro_hgt = true;
+
+	_control_status.flags.gps_hgt = false;
+	_control_status.flags.rng_hgt = false;
+	_control_status.flags.ev_hgt = false;
+}
+
+void Ekf::setControlRangeHeight()
+{
+	_control_status.flags.rng_hgt = true;
+
+	_control_status.flags.baro_hgt = false;
+	_control_status.flags.gps_hgt = false;
+	_control_status.flags.ev_hgt = false;
+}
+
+void Ekf::setControlGPSHeight()
+{
+	_control_status.flags.gps_hgt = true;
+
+	_control_status.flags.baro_hgt = false;
+	_control_status.flags.rng_hgt = false;
+	_control_status.flags.ev_hgt = false;
+}
+
+void Ekf::setControlEVHeight()
+{
+	_control_status.flags.ev_hgt = true;
+
+	_control_status.flags.baro_hgt = false;
+	_control_status.flags.gps_hgt = false;
+	_control_status.flags.rng_hgt = false;
+}
+
+// update the estimated misalignment between the EV navigation frame and the EKF navigation frame
+// and calculate a rotation matrix which rotates EV measurements into the EKF's navigatin frame
+void Ekf::calcExtVisRotMat()
+{
+	// calculate the quaternion delta between the EKF and EV reference frames at the EKF fusion time horizon
+	Quatf quat_inv = _ev_sample_delayed.quat.inversed();
+	Quatf q_error =   quat_inv * _state.quat_nominal;
+	q_error.normalize();
+
+	// convert to a delta angle and apply a spike and low pass filter
+	Vector3f rot_vec;
+	float delta;
+	float scaler;
+	if (q_error(0) >= 0.0f) {
+	    delta = 2 * acosf(q_error(0));
+	    if (delta > 1e-6f) {
+		    scaler = 1.0f /  sinf(delta/2);
+	    } else {
+		    // The rotation is too small to calculate a vector accurately
+		    // Make the rotation vector zero
+		    scaler = 0.0f;
+	    }
+	} else {
+	    delta = 2 * acosf(-q_error(0));
+	    if (delta > 1e-6f) {
+		   scaler = -1.0f /  sinf(delta/2);
+	    } else {
+		    // The rotation is too small to calculate a vector accurately
+		    // Make the rotation vector zero
+		    scaler = 0.0f;
+	    }
+	}
+	rot_vec(0) = q_error(2) * scaler;
+	rot_vec(1) = q_error(3) * scaler;
+	rot_vec(2) = q_error(4) * scaler;
+
+	float rot_vec_norm = rot_vec.norm();
+	if (rot_vec_norm > 1e-6f) {
+		// ensure magnitude of rotation matches the quaternion
+		rot_vec = rot_vec * (delta / rot_vec_norm);
+
+		// apply an input limiter to protect from spikes
+		Vector3f _input_delta_vec = rot_vec - _ev_rot_vec_filt;
+		float input_delta_mag = _input_delta_vec.norm();
+		if (input_delta_mag > 0.1f) {
+			rot_vec = _ev_rot_vec_filt + rot_vec * (0.1f / input_delta_mag);
+		}
+
+		// Apply a first order IIR low pass filter
+		const float omega_lpf_us = 0.2e-6f; // cutoff frequency in rad/uSec
+		float alpha = math::constrain(omega_lpf_us * (float)(_time_last_imu - _ev_rot_last_time_us) , 0.0f , 1.0f);
+		_ev_rot_last_time_us = _time_last_imu;
+		_ev_rot_vec_filt = _ev_rot_vec_filt * (1.0f - alpha) + rot_vec * alpha;
+
+	}
+
+	// convert filtered vector to a quaternion and then to a rotation matrix
+	q_error.from_axis_angle(_ev_rot_vec_filt);
+	_ev_rot_mat = quat_to_invrotmat(q_error);
+
+}
+
+// reset the estimated misalignment between the EV navigation frame and the EKF navigation frame
+// and update the rotation matrix which rotates EV measurements into the EKF's navigation frame
+void Ekf::resetExtVisRotMat()
+{
+	// calculate the quaternion delta between the EKF and EV reference frames at the EKF fusion time horizon
+	Quatf quat_inv = _ev_sample_delayed.quat.inversed();
+	Quatf q_error =   quat_inv * _state.quat_nominal;
+	q_error.normalize();
+
+	// convert to a delta angle and reset
+	Vector3f rot_vec;
+	float delta;
+	if (q_error(0) >= 0.0f) {
+	    delta = 2 * acosf(q_error(0));
+	    rot_vec(0) = q_error(1) / sinf(delta/2);
+	    rot_vec(1) = q_error(2) / sinf(delta/2);
+	    rot_vec(2) = q_error(3) / sinf(delta/2);
+	} else {
+	    delta = 2 * acosf(-q_error(1));
+	    rot_vec(0) = -q_error(2) / sinf(delta/2);
+	    rot_vec(1) = -q_error(3) / sinf(delta/2);
+	    rot_vec(2) = -q_error(4) / sinf(delta/2);
+	}
+
+	float rot_vec_norm = rot_vec.norm();
+	if (rot_vec_norm > 1e-9f) {
+		_ev_rot_vec_filt = rot_vec * delta / rot_vec_norm;
+	} else {
+		_ev_rot_vec_filt.zero();
+	}
+
+	// reset the rotation matrix
+	_ev_rot_mat = quat_to_invrotmat(q_error);
+}
+
+// return the quaternions for the rotation from the EKF to the External Vision system frame of reference
+void Ekf::get_ekf2ev_quaternion(float *quat)
+{
+	Quatf quat_ekf2ev;
+	quat_ekf2ev.from_axis_angle(_ev_rot_vec_filt);
+	for (unsigned i = 0; i < 4; i++) {
+		quat[i] = quat_ekf2ev(i);
+	}
+}
+
+// WINGTRA: return true if velocity test ratio is < 1
+bool Ekf::vel_is_rejected()
+{
+	return _innov_check_fail_status.value & 1;
 }
