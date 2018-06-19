@@ -234,6 +234,8 @@ public:
 
 	void get_R_rng_to_earth_2_2(float *ret); // WINGTRA
 
+	void get_terrain_var(float *ret);	// WINGTRA
+
 	bool vel_is_rejected(); // WINGTRA: return true if velocity test ratio is > 1
 
 	// perform a limited reset of the wind state covariances WINGTRA: Make public
