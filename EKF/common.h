@@ -266,7 +266,7 @@ struct parameters {
 	// synthetic sideslip fusion
 	float beta_innov_gate{5.0f};		///< synthetic sideslip innovation consistency gate size in standard deviation (STD)
 	float beta_noise{0.3f};			///< synthetic sideslip noise (rad)
-	float beta_avg_ft_us{1000000.0f};	///< The average time between synthetic sideslip measurements (uSec)
+	float beta_avg_ft_us{150000.0f};	///< The average time between synthetic sideslip measurements (uSec)
 
 	// range finder fusion
 	float range_noise{0.1f};		///< observation noise for range finder measurements (m)
@@ -323,6 +323,8 @@ struct parameters {
 						///< rejected before attempting to reset the states to the GPS measurement (uSec)
 	unsigned no_aid_timeout_max{1000000};	///< maximum lapsed time from last fusion of measurements that constrain drift before
 						///< the EKF will report that it is dead-reckoning (uSec)
+
+	int32_t valid_timeout_max{5000000};	///< amount of time spent inertial dead reckoning before the estimator reports the state estimates as invalid (uSec)
 
 	// multi-rotor drag specific force fusion
 	float drag_noise{2.5f};			///< observation noise variance for drag specific force measurements (m/sec**2)**2

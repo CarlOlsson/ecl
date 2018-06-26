@@ -136,12 +136,8 @@ void Ekf::controlFusionModes()
 	// Additional NE velocity data from an auxiliary sensor can be fused
 	controlAuxVelFusion();
 
-	// report dead reckoning if we are no longer fusing measurements that directly constrain velocity drift
-	_is_dead_reckoning = (_time_last_imu - _time_last_pos_fuse > _params.no_aid_timeout_max)
-			&& (_time_last_imu - _time_last_delpos_fuse > _params.no_aid_timeout_max)
-			&& (_time_last_imu - _time_last_vel_fuse > _params.no_aid_timeout_max)
-			&& (_time_last_imu - _time_last_of_fuse > _params.no_aid_timeout_max);
-
+	// check if we are no longer fusing measurements that directly constrain velocity drift
+	update_deadreckoning_status();
 }
 
 void Ekf::controlExternalVisionFusion()
@@ -525,7 +521,7 @@ void Ekf::controlGpsFusion()
 			float lower_limit = fmaxf(_params.gps_pos_noise, 0.01f);
 			float upper_limit = fmaxf(_params.pos_noaid_noise, lower_limit);
 			_posObsNoiseNE = math::constrain(_gps_sample_delayed.hacc, lower_limit, upper_limit);
-			_velObsVarNE(1) = _velObsVarNE(0) = sq(fmaxf(_params.gps_vel_noise, 0.01f));
+			_velObsVarNE(1) = _velObsVarNE(0) = sq(fmaxf(_gps_sample_delayed.sacc, _params.gps_vel_noise));
 
 			// calculate innovations
 			_vel_pos_innov[0] = _state.vel(0) - _gps_sample_delayed.vel(0);
@@ -539,7 +535,7 @@ void Ekf::controlGpsFusion()
 			_hvelInnovGate = fmaxf(_params.vel_innov_gate, 1.0f);
 		}
 
-	} else if (_control_status.flags.gps && (_time_last_imu - _time_last_gps > (uint64_t)10e6)) {
+	} else if (_control_status.flags.gps && (_imu_sample_delayed.time_us - _gps_sample_delayed.time_us > (uint64_t)10e6)) {
 			_control_status.flags.gps = false;
 			ECL_WARN("EKF GPS data stopped");
 
@@ -656,7 +652,7 @@ void Ekf::controlHeightSensorTimeouts()
 			const baroSample& baro_init = _baro_buffer.get_newest();
 			bool baro_data_fresh = ((_time_last_imu - baro_init.time_us) < 2 * BARO_MAX_INTERVAL);
 			float baro_innov = _state.pos(2) - (_hgt_sensor_offset - baro_init.hgt + _baro_hgt_offset);
-			bool baro_data_consistent = fabsf(baro_innov) < (sq(_params.baro_noise) + P[8][8]) * sq(_params.baro_innov_gate);
+			bool baro_data_consistent = fabsf(baro_innov) < (sq(_params.baro_noise) + P[9][9]) * sq(_params.baro_innov_gate);
 
 			// if baro data is acceptable and GPS data is inaccurate, reset height to baro
 			bool reset_to_baro = baro_data_consistent && baro_data_fresh && !_baro_hgt_faulty && !gps_hgt_accurate;
@@ -825,8 +821,7 @@ void Ekf::controlHeightFusion()
 				}
 			}
 
-		} else if (_baro_data_ready && !_baro_hgt_faulty &&
-			         !(_in_range_aid_mode && !_range_data_ready && !_rng_hgt_faulty)) {
+		} else if (!_in_range_aid_mode && _baro_data_ready && !_baro_hgt_faulty) {
 			setControlBaroHeight();
 			_fuse_height = true;
 			_in_range_aid_mode = false;
@@ -909,8 +904,7 @@ void Ekf::controlHeightFusion()
 				}
 			}
 
-		} else if (_gps_data_ready && !_gps_hgt_faulty &&
-		           !(_in_range_aid_mode && !_range_data_ready && !_rng_hgt_faulty)) {
+		} else if (!_in_range_aid_mode && _gps_data_ready && !_gps_hgt_faulty) {
 			setControlGPSHeight();
 			_fuse_height = true;
 			_in_range_aid_mode = false;
@@ -1324,38 +1318,51 @@ void Ekf::controlVelPosFusion()
 {
 	// if we aren't doing any aiding, fake GPS measurements at the last known position to constrain drift
 	// Coincide fake measurements with baro data for efficiency with a minimum fusion rate of 5Hz
+	if (!(_params.fusion_mode & MASK_USE_GPS)) {
+		_control_status.flags.gps = false;
+	}
 	if (!_control_status.flags.gps &&
 			!_control_status.flags.opt_flow &&
 			!_control_status.flags.ev_pos &&
-			!(_control_status.flags.fuse_aspd && _control_status.flags.fuse_beta) &&
-			((_time_last_imu - _time_last_fake_gps > (uint64_t)2e5) || _fuse_height))
-	{
-		// Reset position and velocity states if we re-commence this aiding method
-		if ((_time_last_imu - _time_last_fake_gps) > (uint64_t)4e5) {
-			_last_known_posNE(0) = _state.pos(0);
-			_last_known_posNE(1) = _state.pos(1);
-			_state.vel.setZero();
-			_fuse_hpos_as_odom = false;
-			if (_time_last_fake_gps != 0) {
-				ECL_WARN("EKF stopping navigation");
+			!(_control_status.flags.fuse_aspd && _control_status.flags.fuse_beta)) {
+		// We now need to use a synthetic positon observation to prevent unconstrained drift of the INS states.
+		_using_synthetic_position = true;
+
+		// Fuse synthetic position observations every 200msec
+		if ((_time_last_imu - _time_last_fake_gps > (uint64_t)2e5) || _fuse_height) {
+			// Reset position and velocity states if we re-commence this aiding method
+			if ((_time_last_imu - _time_last_fake_gps) > (uint64_t)4e5) {
+				resetPosition();
+				resetVelocity();
+				_fuse_hpos_as_odom = false;
+				if (_time_last_fake_gps != 0) {
+					ECL_WARN("EKF stopping navigation");
+				}
+
 			}
 
+			_fuse_pos = true;
+			_fuse_hor_vel = false;
+			_fuse_vert_vel = false;
+			_time_last_fake_gps = _time_last_imu;
+
+			if (_control_status.flags.in_air && _control_status.flags.tilt_align) {
+				_posObsNoiseNE = fmaxf(_params.pos_noaid_noise, _params.gps_pos_noise);
+			} else {
+				_posObsNoiseNE = 0.5f;
+			}
+			_vel_pos_innov[0] = 0.0f;
+			_vel_pos_innov[1] = 0.0f;
+			_vel_pos_innov[2] = 0.0f;
+			_vel_pos_innov[3] = _state.pos(0) - _last_known_posNE(0);
+			_vel_pos_innov[4] = _state.pos(1) - _last_known_posNE(1);
+
+			// glitch protection is not required so set gate to a large value
+			_posInnovGateNE = 100.0f;
+
 		}
-
-		_fuse_pos = true;
-		_time_last_fake_gps = _time_last_imu;
-
-		if (_control_status.flags.in_air && _control_status.flags.tilt_align) {
-			_posObsNoiseNE = fmaxf(_params.pos_noaid_noise, _params.gps_pos_noise);
-		} else {
-			_posObsNoiseNE = 0.5f;
-		}
-		_vel_pos_innov[3] = _state.pos(0) - _last_known_posNE(0);
-		_vel_pos_innov[4] = _state.pos(1) - _last_known_posNE(1);
-
-		// glitch protection is not required so set gate to a large value
-		_posInnovGateNE = 100.0f;
-
+	} else {
+		_using_synthetic_position = false;
 	}
 
 	// Fuse available NED velocity and position data into the main filter

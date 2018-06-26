@@ -143,13 +143,13 @@ public:
 	virtual bool get_ekf_origin(uint64_t *origin_time, map_projection_reference_s *origin_pos, float *origin_alt) = 0;
 
 	// get the 1-sigma horizontal and vertical position uncertainty of the ekf WGS-84 position
-	virtual void get_ekf_gpos_accuracy(float *ekf_eph, float *ekf_epv, bool *dead_reckoning) = 0;
+	virtual void get_ekf_gpos_accuracy(float *ekf_eph, float *ekf_epv) = 0;
 
 	// get the 1-sigma horizontal and vertical position uncertainty of the ekf local position
-	virtual void get_ekf_lpos_accuracy(float *ekf_eph, float *ekf_epv, bool *dead_reckoning) = 0;
+	virtual void get_ekf_lpos_accuracy(float *ekf_eph, float *ekf_epv) = 0;
 
 	// get the 1-sigma horizontal and vertical velocity uncertainty
-	virtual void get_ekf_vel_accuracy(float *ekf_evh, float *ekf_evv, bool *dead_reckoning) = 0;
+	virtual void get_ekf_vel_accuracy(float *ekf_evh, float *ekf_evv) = 0;
 
 	/*
 	Returns the following vehicle control limits required by the estimator.
@@ -208,6 +208,9 @@ public:
 	// get vehicle landed status data
 	bool get_in_air_status() {return _control_status.flags.in_air;}
 
+	// get wind estimation status
+	bool get_wind_status() { return _control_status.flags.wind; }
+
 	// set vehicle is fixed wing status
 	void set_is_fixed_wing(bool is_fixed_wing) {_control_status.flags.fixed_wing = is_fixed_wing;}
 
@@ -233,7 +236,7 @@ public:
 	virtual bool global_position_is_valid() = 0;
 
 	// return true if the EKF is dead reckoning the position using inertial data only
-	virtual bool inertial_dead_reckoning() = 0;
+	bool inertial_dead_reckoning() {return _is_dead_reckoning;}
 
 	// return true if the terrain estimate is valid
 	virtual bool get_terrain_valid() = 0;
@@ -454,7 +457,9 @@ protected:
 	float _drag_test_ratio[2] {};	// drag innovation cinsistency check ratio
 	innovation_fault_status_u _innov_check_fail_status{};
 
-	bool _is_dead_reckoning{false};	// true if we are no longer fusing measurements that constrain horizontal velocity drift
+	bool _is_dead_reckoning{false};		// true if we are no longer fusing measurements that constrain horizontal velocity drift
+	bool _deadreckon_time_exceeded{false};	// true if the horizontal nav solution has been deadreckoning for too long and is invalid
+	bool _is_wind_dead_reckoning{false};	// true if we are navigating reliant on wind relative measurements
 
 	// IMU vibration monitoring
 	Vector3f _delta_ang_prev;	// delta angle from the previous IMU measurement

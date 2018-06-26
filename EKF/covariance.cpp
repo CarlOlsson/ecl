@@ -207,7 +207,7 @@ void Ekf::predictCovariance()
 	float wind_vel_sig;
 
 	// Don't continue to grow wind velocity state variances if they are becoming too large or we are not using wind velocity states as this can make the covariance matrix badly conditioned
-	if (_control_status.flags.wind && (P[22][22] + P[23][23]) < 2.0f * sq(_params.initial_wind_uncertainty)) {
+	if (_control_status.flags.wind && (P[22][22] + P[23][23]) < sq(_params.initial_wind_uncertainty)) {
 		wind_vel_sig = dt * math::constrain(_params.wind_vel_p_noise, 0.0f, 1.0f);
 
 	} else {
@@ -748,13 +748,12 @@ void Ekf::fixCovarianceErrors()
 
 		// To ensure stability of the covariance matrix operations, the ratio of a max and min variance must
 		// not exceed 100 and the minimum variance must not fall below the target minimum
-		// Also limit variance to a maximum equivalent to a 1g uncertainty
-		const float minStateVarTarget = 1E-8f;
+		// Also limit variance to a maximum equivalent to a 0.1g uncertainty
+		const float minStateVarTarget = 5E-8f;
 		float minAllowedStateVar = fmaxf(0.01f * maxStateVar, minStateVarTarget);
 
 		for (uint8_t stateIndex = 13; stateIndex <= 15; stateIndex++) {
-			P[stateIndex][stateIndex] = math::constrain(P[stateIndex][stateIndex], minAllowedStateVar,
-						    sq(_gravity_mss * _dt_ekf_avg));
+			P[stateIndex][stateIndex] = math::constrain(P[stateIndex][stateIndex], minAllowedStateVar, sq(0.1f * CONSTANTS_ONE_G * _dt_ekf_avg));
 		}
 
 		// If any one axis has fallen below the safe minimum, all delta velocity covariance terms must be reset to zero
