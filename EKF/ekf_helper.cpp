@@ -1562,4 +1562,5 @@ void Ekf::get_ekf2ev_quaternion(float *quat)
 bool Ekf::vel_is_rejected()
 {
 	return (_innov_check_fail_status.value & 1) || _is_wind_dead_reckoning;
+	
 }
