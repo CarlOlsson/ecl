@@ -75,7 +75,7 @@ void Ekf::runTerrainEstimator()
 	checkRangeDataContinuity();
 
 	// Perform initialisation check
-	if (!_terrain_initialised) {
+	if (!_terrain_initialised || _terrain_var > 100.0f) { // WINGTRA: Reinitialize terrain estimate if variance is very large
 		_terrain_initialised = initHagl();
 
 	} else {
