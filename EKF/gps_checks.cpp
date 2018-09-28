@@ -76,7 +76,7 @@ bool Ekf::collect_gps(uint64_t time_usec, struct gps_message *gps)
 
 			// Take the current GPS height and subtract the filter height above origin to estimate the GPS height of the origin
 			_gps_alt_ref = 1e-3f * (float)gps->alt + _state.pos(2);
-			_NED_origin_initialised = true;
+			_NED_origin_initialised = (fabsf(_gps_alt_ref) > FLT_EPSILON) ? true : false;  // WINGTRA: initialized only if _gps_alt_ref set properly
 			_last_gps_origin_time_us = _time_last_imu;
 			// set the magnetic declination returned by the geo library using the current GPS position
 			_mag_declination_gps = math::radians(get_mag_declination(lat, lon));
