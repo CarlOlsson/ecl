@@ -447,7 +447,7 @@ private:
 	float _rng_check_min_val{0.0f};		///< minimum value for new rng measurement when being stuck
 	float _rng_check_max_val{0.0f};		///< maximum value for new rng measurement when being stuck
 
-	float _height_rate_lpf{0.0f};
+	float _height_rate_lpf{0.0f};	///< WINGTRA: low pass filtered vertical velocity used to scale wind process noise
 
 	// update the real time complementary filter states. This includes the prediction
 	// and the correction step
