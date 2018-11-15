@@ -480,6 +480,12 @@ bool Ekf::realignYawGPS()
 // Reset heading and magnetic field states
 bool Ekf::resetMagHeading(Vector3f &mag_init)
 {
+	// WINGTRA: don't reset twice on the same frame
+	if (_imu_sample_delayed.time_us == _flt_mag_align_start_time) {
+		return true;
+	}
+	// WINGTRA: End
+
 	// save a copy of the quaternion state for later use in calculating the amount of reset change
 	Quatf quat_before_reset = _state.quat_nominal;
 	Quatf quat_after_reset = _state.quat_nominal;
@@ -629,48 +635,46 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 
 
 	// update the quaternion state estimates and corresponding covariances only if the change in angle has been large
-	if (delta_ang_error.norm() > math::radians(15.0f)) {
-		// update quaternion states
-		_state.quat_nominal = quat_after_reset;
+	// if (delta_ang_error.norm() > math::radians(15.0f)) { // WINGTRA: Always update states
+	// update quaternion states
+	_state.quat_nominal = quat_after_reset;
 
-		// record the state change
-		_state_reset_status.quat_change = q_error;
+	// record the state change
+	_state_reset_status.quat_change = q_error;
 
-		// update transformation matrix from body to world frame using the current estimate
-		_R_to_earth = quat_to_invrotmat(_state.quat_nominal);
+	// update transformation matrix from body to world frame using the current estimate
+	_R_to_earth = quat_to_invrotmat(_state.quat_nominal);
 
-		// reset the rotation from the EV to EKF frame of reference if it is being used
-		if ((_params.fusion_mode & MASK_ROTATE_EV) && (_params.fusion_mode & MASK_USE_EVPOS) && !(_params.fusion_mode & MASK_USE_EVYAW)) {
-			resetExtVisRotMat();
-		}
-
-		// update the yaw angle variance using the variance of the measurement
-		if (_params.fusion_mode & MASK_USE_EVYAW) {
-			// using error estimate from external vision data
-			angle_err_var_vec(2) = sq(fmaxf(_ev_sample_delayed.angErr, 1.0e-2f));
-
-		} else if (_params.mag_fusion_type <= MAG_FUSE_TYPE_AUTOFW) {
-			// using magnetic heading tuning parameter
-			angle_err_var_vec(2) = sq(fmaxf(_params.mag_heading_noise, 1.0e-2f));
-		}
-
-		// reset the quaternion covariances using the rotation vector variances
-		initialiseQuatCovariances(angle_err_var_vec);
-
-		// add the reset amount to the output observer buffered data
-		for (uint8_t i = 0; i < _output_buffer.get_length(); i++) {
-			// Note q1 *= q2 is equivalent to q1 = q2 * q1
-			_output_buffer[i].quat_nominal *= _state_reset_status.quat_change;
-		}
-
-		// apply the change in attitude quaternion to our newest quaternion estimate
-		// which was already taken out from the output buffer
-		_output_new.quat_nominal = _state_reset_status.quat_change * _output_new.quat_nominal;
-
-		// capture the reset event
-		_state_reset_status.quat_counter++;
-
+	// reset the rotation from the EV to EKF frame of reference if it is being used
+	if ((_params.fusion_mode & MASK_ROTATE_EV) && (_params.fusion_mode & MASK_USE_EVPOS) && !(_params.fusion_mode & MASK_USE_EVYAW)) {
+		resetExtVisRotMat();
 	}
+
+	// update the yaw angle variance using the variance of the measurement
+	if (_params.fusion_mode & MASK_USE_EVYAW) {
+		// using error estimate from external vision data
+		angle_err_var_vec(2) = sq(fmaxf(_ev_sample_delayed.angErr, 1.0e-2f));
+
+	} else if (_params.mag_fusion_type <= MAG_FUSE_TYPE_AUTOFW) {
+		// using magnetic heading tuning parameter
+		angle_err_var_vec(2) = sq(fmaxf(_params.mag_heading_noise, 1.0e-2f));
+	}
+
+	// reset the quaternion covariances using the rotation vector variances
+	initialiseQuatCovariances(angle_err_var_vec);
+
+	// add the reset amount to the output observer buffered data
+	for (uint8_t i = 0; i < _output_buffer.get_length(); i++) {
+		// Note q1 *= q2 is equivalent to q1 = q2 * q1
+		_output_buffer[i].quat_nominal *= _state_reset_status.quat_change;
+	}
+
+	// apply the change in attitude quaternion to our newest quaternion estimate
+	// which was already taken out from the output buffer
+	_output_new.quat_nominal = _state_reset_status.quat_change * _output_new.quat_nominal;
+
+	// capture the reset event
+	_state_reset_status.quat_counter++;
 
 	return true;
 }

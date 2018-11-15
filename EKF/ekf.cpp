@@ -271,6 +271,8 @@ bool Ekf::initialiseFilter()
 		Vector3f mag_init = _mag_filt_state;
 
 		// calculate the initial magnetic field and yaw alignment
+		// WINGTRA: Get the magnetic declination
+		calcMagDeclination();
 		_control_status.flags.yaw_align = resetMagHeading(mag_init);
 
 		// initialise the rotation from EV to EKF navigation frame if required
