@@ -1199,6 +1199,13 @@ void Ekf::controlMagFusion()
 				_time_last_movement = _imu_sample_delayed.time_us;
 			}
 
+			// WINGTRA: Force 3D fusion right after take off
+			if (height_achieved && !_height_achieved_once) {
+				_height_achieved_once = true;
+				_time_last_movement = _imu_sample_delayed.time_us;
+			}
+			// WINGTA: End
+
 			// decide whether 3-axis magnetomer fusion can be used
 			bool use_3D_fusion = _control_status.flags.tilt_align && // Use of 3D fusion requires valid tilt estimates
 					_control_status.flags.in_air && // don't use when on the ground becasue of magnetic anomalies
