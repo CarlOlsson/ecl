@@ -82,6 +82,8 @@ bool Ekf::collect_gps(uint64_t time_usec, struct gps_message *gps)
 			_mag_declination_gps = math::radians(get_mag_declination(lat, lon));
 			// WINGTRA: request a reset of the yaw using the new declination
 			_mag_yaw_reset_req = true;
+			// WINGTRA: Update the magnetic declination so we don't risk saving the parameter before this function runs
+			calcMagDeclination();
 			// save the horizontal and vertical position uncertainty of the origin
 			_gps_origin_eph = gps->eph;
 			_gps_origin_epv = gps->epv;
