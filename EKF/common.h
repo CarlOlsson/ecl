@@ -320,7 +320,7 @@ struct parameters {
 	float acc_bias_learn_gyr_lim{3.0f};	///< learning is disabled if the magnitude of the IMU angular rate vector is greater than this (rad/sec)
 	float acc_bias_learn_tc{0.5f};		///< time constant used to control the decaying envelope filters applied to the accel and gyro magnitudes (sec)
 
-	unsigned no_gps_timeout_max{7000000};	///< maximum time we allow dead reckoning while both gps position and velocity measurements are being
+	unsigned no_gps_timeout_max{2000000};	///< WINGTRA: maximum time we allow dead reckoning while both gps position and velocity measurements are being
 						///< rejected before attempting to reset the states to the GPS measurement (uSec)
 	unsigned no_aid_timeout_max{1000000};	///< maximum lapsed time from last fusion of measurements that constrain drift before
 						///< the EKF will report that it is dead-reckoning (uSec)
