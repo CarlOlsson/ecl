@@ -660,8 +660,13 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 		angle_err_var_vec(2) = sq(fmaxf(_params.mag_heading_noise, 1.0e-2f));
 	}
 
-	// reset the quaternion covariances using the rotation vector variances
-	initialiseQuatCovariances(angle_err_var_vec);
+	// WINGTRA: update the covariances only if the change in angle has been large to avoid unnecessary
+	// manipulation of the covariance matrix that can temporarily reduce filter performance
+	if (delta_ang_error.norm() > math::radians(15.0f)) {
+		// reset the quaternion covariances using the rotation vector variances
+		initialiseQuatCovariances(angle_err_var_vec);
+	}
+	// WINGTRA: End
 
 	// add the reset amount to the output observer buffered data
 	for (uint8_t i = 0; i < _output_buffer.get_length(); i++) {
