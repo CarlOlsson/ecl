@@ -1387,7 +1387,8 @@ void Ekf::controlMagFusion()
 
 		} else if (_params.mag_fusion_type == MAG_FUSE_TYPE_AUTO || _params.mag_fusion_type == MAG_FUSE_TYPE_AUTOFW) {
 			// Check if height has increased sufficiently to be away from ground magnetic anomalies
-			bool height_achieved = (_last_on_ground_posD - _state.pos(2)) > 1.5f;
+			float terrain_vpos_estimate = get_terrain_valid() ? _terrain_vpos : _last_on_ground_posD; // WINGTRA
+			bool height_achieved = (terrain_vpos_estimate - _state.pos(2)) > 1.5f; // WINGTRA
 
 			// Check if there has been enough change in horizontal velocity to make yaw observable
 			// Apply hysteresis to check to avoid rapid toggling
@@ -1428,11 +1429,23 @@ void Ekf::controlMagFusion()
 				_time_last_movement = _imu_sample_delayed.time_us;
 			}
 
+			// WINGTRA: Force 3D fusion in hover when we are away from the ground
+			if (height_achieved && !_control_status.flags.fixed_wing) {
+				_time_last_movement = _imu_sample_delayed.time_us;
+			}
+			// WINGTA: End
+
 			// decide whether 3-axis magnetomer fusion can be used
 			bool use_3D_fusion = _control_status.flags.tilt_align && // Use of 3D fusion requires valid tilt estimates
 					_control_status.flags.in_air && // don't use when on the ground becasue of magnetic anomalies
 					(_control_status.flags.mag_align_complete || height_achieved) && // once in-flight field alignment has been performed, ignore relative height
 					((_imu_sample_delayed.time_us - _time_last_movement) < 2 * 1000 * 1000); // Using 3-axis fusion for a minimum period after to allow for false negatives
+
+			// WINGTRA: Force heading fusion in hover close to the ground
+			if (!_control_status.flags.fixed_wing && !height_achieved) {
+				use_3D_fusion = false;
+			}
+			// WINGTRA: End
 
 			// perform switch-over
 			if (use_3D_fusion) {
