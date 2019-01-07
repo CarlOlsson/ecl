@@ -964,6 +964,20 @@ void Ekf::get_covariances(float *covariances)
 	}
 }
 
+void Ekf::get_quat_covariances(float *quat_covariances)
+{
+	// get 4x4 elements
+	uint32_t row;
+	uint32_t col;
+	uint32_t idx = 0;
+	for (row = 0; row < 4; row++) {
+		for (col = 0; col < 4; col++) {
+			quat_covariances[idx] = P[row][col];
+			idx++;
+		}
+	}
+}
+
 // get the position and height of the ekf origin in WGS-84 coordinates and time the origin was set
 // return true if the origin is valid
 bool Ekf::get_ekf_origin(uint64_t *origin_time, map_projection_reference_s *origin_pos, float *origin_alt)

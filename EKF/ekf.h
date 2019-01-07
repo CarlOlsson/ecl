@@ -125,6 +125,8 @@ public:
 	// get the diagonal elements of the covariance matrix
 	void get_covariances(float *covariances);
 
+	void get_quat_covariances(float *quat_covariances);
+
 	// ask estimator for sensor data collection decision and do any preprocessing if required, returns true if not defined
 	bool collect_gps(uint64_t time_usec, struct gps_message *gps);
 

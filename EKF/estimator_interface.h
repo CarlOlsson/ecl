@@ -106,6 +106,8 @@ public:
 
 	virtual void get_covariances(float *covariances) = 0;
 
+	virtual void get_quat_covariances(float *quat_covariances) = 0;
+
 	// gets the variances for the NED velocity states
 	virtual void get_vel_var(Vector3f &vel_var) = 0;
 
