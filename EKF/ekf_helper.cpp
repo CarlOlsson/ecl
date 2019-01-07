@@ -721,7 +721,7 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 	}
 
 	// update the yaw angle variance using the variance of the measurement
-	if (!_control_status.flags.ev_yaw) {
+	if (_control_status.flags.ev_yaw) {
 		// using error estimate from external vision data
 		increaseQuatYawErrVariance(sq(fmaxf(_ev_sample_delayed.angErr, 1.0e-2f)));
 	} else if (_params.mag_fusion_type <= MAG_FUSE_TYPE_AUTOFW) {
