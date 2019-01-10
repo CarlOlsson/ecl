@@ -246,6 +246,9 @@ bool Ekf::initialiseFilter()
 		_state.mag_B.setZero();
 		_state.wind_vel.setZero();
 
+		// initialise the state covariance matrix
+		initialiseCovariance();
+
 		// get initial roll and pitch estimate from delta velocity vector, assuming vehicle is static
 		float pitch = 0.0f;
 		float roll = 0.0f;
@@ -294,9 +297,6 @@ bool Ekf::initialiseFilter()
 			resetHeight();
 
 		}
-
-		// initialise the state covariance matrix
-		initialiseCovariance();
 
 		// try to initialise the terrain estimator
 		_terrain_initialised = initHagl();
