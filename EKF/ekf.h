@@ -248,6 +248,13 @@ public:
 	// use the latest IMU data at the current time horizon.
 	Quatf calculate_quaternion() const;
 
+	// Increase the yaw error variance of the quaternions
+	// Argument is additional yaw variance in rad**2
+	void increaseQuatYawErrVariance(float yaw_variance);
+
+	// uncorrelate quaternion states from other states
+	void uncorrelateQuatStates();
+
 private:
 
 	static constexpr uint8_t _k_num_states{24};		///< number of EKF states
@@ -670,12 +677,4 @@ private:
 
 	// check that the range finder data is continuous
 	void checkRangeDataContinuity();
-
-	// Increase the yaw error variance of the quaternions
-	// Argument is additional yaw variance in rad**2
-	void increaseQuatYawErrVariance(float yaw_variance);
-
-	// uncorrelate quaternion states from other states
-	void uncorrelateQuatStates();
-
 };
