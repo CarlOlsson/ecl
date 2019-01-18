@@ -44,6 +44,7 @@
 #include <ecl.h>
 #include <mathlib/mathlib.h>
 #include <cstdlib>
+#include <geo_lookup/geo_mag_declination.h>
 
 // Reset the velocity states. If we have a recent and valid
 // gps measurement then use for velocity initialisation
@@ -680,15 +681,31 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 		quat_after_reset = Quatf(R_to_earth);
 	}
 
-	// set the earth magnetic field states using the updated rotation
-	Dcmf _R_to_earth_after = quat_to_invrotmat(quat_after_reset);
-	_state.mag_I = _R_to_earth_after * mag_init;
-
 	// reset the corresponding rows and columns in the covariance matrix and set the variances on the magnetic field states to the measurement variance
 	zeroRows(P, 16, 21);
 	zeroCols(P, 16, 21);
 
-	for (uint8_t index = 16; index <= 21; index ++) {
+	float initial_uncertainty = 0.0f;
+	if (_params.mag_e_states_from_table) {
+		// set the earth magnetic field states using the geo lookup tables
+		_state.mag_I = get_mag_vector(_state.pos(0), _state.pos(1));
+
+		initial_uncertainty = _params.initial_mag_e_states_uncertainty;
+
+	} else {
+		// set the earth magnetic field states using the updated rotation
+		Dcmf _R_to_earth_after = quat_to_invrotmat(quat_after_reset);
+		_state.mag_I = _R_to_earth_after * mag_init;
+
+		initial_uncertainty = _params.mag_noise;
+
+	}
+
+	for (uint8_t index = 16; index <= 18; index ++) {
+		P[index][index] = sq(initial_uncertainty);
+	}
+
+	for (uint8_t index = 19; index <= 21; index ++) {
 		P[index][index] = sq(_params.mag_noise);
 	}
 

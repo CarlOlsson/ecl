@@ -268,6 +268,8 @@ struct parameters {
 	int32_t mag_fusion_type{0};		///< integer used to specify the type of magnetometer fusion used
 	float mag_acc_gate{0.5f};		///< when in auto select mode, heading fusion will be used when manoeuvre accel is lower than this (m/sec**2)
 	float mag_yaw_rate_gate{0.25f};		///< yaw rate threshold used by mode select logic (rad/sec)
+	bool mag_e_states_from_table{true};	///< true if the earth magnetic field states should be initialized from the geo lookup tables
+	float initial_mag_e_states_uncertainty{5.0e-3f};	///< 1-sigma initial uncertainty in earth magnetic field states (Gauss)
 
 	// airspeed fusion
 	float tas_innov_gate{5.0f};		///< True Airspeed innovation consistency gate size (STD)
