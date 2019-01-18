@@ -49,6 +49,7 @@
 #include <stdint.h>
 
 using math::constrain;
+using math::radians;
 
 /** set this always to the sampling in degrees for the table below */
 static constexpr float SAMPLING_RES = 10.0f;
@@ -174,4 +175,16 @@ float get_mag_inclination(float lat, float lon)
 float get_mag_strength(float lat, float lon)
 {
 	return get_table_data(lat, lon, strength_table);
+}
+
+matrix::Vector3f get_mag_vector(float lat, float lon)
+{
+	float declination = radians(get_mag_declination(lat, lon));
+	float inclination = radians(get_mag_inclination(lat, lon));
+	float strength = radians(get_mag_strength(lat, lon));
+	matrix::Vector3f vec;
+	vec(0) = strength * cos(inclination) * cos(declination);
+	vec(1) = strength * cos(inclination) * sin(declination);
+	vec(2) = -1.0f * sin(inclination);
+	return vec;
 }
