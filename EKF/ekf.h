@@ -332,7 +332,6 @@ private:
 	float _yaw_rate_lpf_ef{0.0f};		///< Filtered angular rate about earth frame D axis (rad/sec)
 	bool _mag_bias_observable{false};	///< true when there is enough rotation to make magnetometer bias errors observable
 	bool _yaw_angle_observable{false};	///< true when there is enough horizontal acceleration to make yaw observable
-	bool _height_achieved_once{false};  ///< WINGTRA: true if the system reached 1.5 meter altitude once
 	uint64_t _time_yaw_started{0};		///< last system time in usec that a yaw rotation moaneouvre was detected
 	uint8_t _num_bad_flight_yaw_events{0};	///< number of times a bad heading has been detected in flight and required a yaw reset
 	bool _mag_yaw_reset_req{false};		///< WINGTRA: true when a reset of the yaw using the magnetomer data has been requested
