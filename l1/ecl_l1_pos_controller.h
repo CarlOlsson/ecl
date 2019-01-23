@@ -55,35 +55,57 @@
  *     - Modified to enable period and damping of guidance loop to be set explicitly
  *     - Modified to provide explicit control over capture angle
  *
+ *    [3] Thomas Stastny, code modifications for L1 control in wind. July 2016.
+ *     - Removed PD switching for circle tracking, smaller loiter radii are tracked by automatically recalculating L1 ratio with reduced period
+ *     - L1 bearing tracking feasibility is calculated in windy cases, if infeasible, heading is controlled to face into the wind
+ *     - NOTE: requires airspeed sensor and magnetometer (for body-heading estimate).
  */
 
 #ifndef ECL_L1_POS_CONTROLLER_H
 #define ECL_L1_POS_CONTROLLER_H
 
 #include <mathlib/mathlib.h>
-#include <matrix/math.hpp>
 #include <geo/geo.h>
-#include <ecl.h>
+#include <ecl/ecl.h>
 
 /**
  * L1 Nonlinear Guidance Logic
  */
-class ECL_L1_Pos_Controller
+class __EXPORT ECL_L1_Pos_Controller
 {
 public:
+	ECL_L1_Pos_Controller() :
+		_lateral_accel(0.0),
+		_L1_distance(20.0),
+		_circle_mode(false),
+		_nav_bearing(0.0),
+		_bearing_error(0.0),
+		_crosstrack_error(0.0),
+		_target_bearing(0.0),
+		_L1_period(25.0),
+		_L1_damping(0.75),
+		_L1_ratio(5.0),
+		_K_L1(2.0),
+		_heading_omega(1.0),
+		_roll_lim_rad(math::radians(10.0))
+	{
+	}
+
 	/**
 	 * The current target bearing
 	 *
 	 * @return bearing angle (-pi..pi, in NED frame)
 	 */
-	float nav_bearing() { return matrix::wrap_pi(_nav_bearing); }
+	float nav_bearing();
+
 
 	/**
 	 * Get lateral acceleration demand.
 	 *
 	 * @return Lateral acceleration in m/s^2
 	 */
-	float nav_lateral_acceleration_demand() { return _lateral_accel; }
+	float nav_lateral_acceleration_demand();
+
 
 	/**
 	 * Heading error.
@@ -91,38 +113,47 @@ public:
 	 * The heading error is either compared to the current track
 	 * or to the tangent of the current loiter radius.
 	 */
-	float bearing_error() { return _bearing_error; }
+	float bearing_error();
+
 
 	/**
 	 * Bearing from aircraft to current target.
 	 *
 	 * @return bearing angle (-pi..pi, in NED frame)
 	 */
-	float target_bearing() { return _target_bearing; }
+	float target_bearing();
+
 
 	/**
 	 * Get roll angle setpoint for fixed wing.
 	 *
 	 * @return Roll angle (in NED frame)
 	 */
-	float get_roll_setpoint(){ return _roll_setpoint; }
+	float nav_roll();
+
 
 	/**
 	 * Get the current crosstrack error.
 	 *
 	 * @return Crosstrack error in meters.
 	 */
-	float crosstrack_error() { return _crosstrack_error; }
+	float crosstrack_error();
+
 
 	/**
 	 * Returns true if the loiter waypoint has been reached
 	 */
-	bool reached_loiter_target() { return _circle_mode; }
+	bool reached_loiter_target();
+
 
 	/**
 	 * Returns true if following a circle (loiter)
 	 */
-	bool circle_mode() { return _circle_mode; }
+	bool circle_mode()
+	{
+		return _circle_mode;
+	}
+
 
 	/**
 	 * Get the switch distance
@@ -135,6 +166,7 @@ public:
 	 */
 	float switch_distance(float waypoint_switch_radius);
 
+
 	/**
 	 * Navigate between two waypoints
 	 *
@@ -143,21 +175,29 @@ public:
 	 * the points and once captured following the line segment.
 	 * This follows the logic in [1].
 	 *
+	 * Handle windspeed > airspeed cases for both feasible and infeasible L1 bearings
+	 * -modificaitons introduced in [3].
+	 *
 	 * @return sets _lateral_accel setpoint
 	 */
-	void navigate_waypoints(const matrix::Vector2f &vector_A, const matrix::Vector2f &vector_B,
-				const matrix::Vector2f &vector_curr_position, const matrix::Vector2f &ground_speed);
+	void navigate_waypoints(const math::Vector<2> &vector_A, const math::Vector<2> &vector_B,
+	                        const math::Vector<2> &vector_curr_position,
+	                        const math::Vector<2> &ground_speed, float airspeed, const float heading);
+
 
 	/**
 	 * Navigate on an orbit around a loiter waypoint.
 	 *
-	 * This allow orbits smaller than the L1 length,
-	 * this modification was introduced in [2].
+	 * -Allow orbits smaller than the L1 length by automatically reducing the L1 period
+	 * -Handle windspeed > airspeed cases for both feasible and infeasible L1 bearings
+	 * modifications were introduced in [3].
 	 *
 	 * @return sets _lateral_accel setpoint
 	 */
-	void navigate_loiter(const matrix::Vector2f &vector_A, const matrix::Vector2f &vector_curr_position, float radius,
-			     int8_t loiter_direction, const matrix::Vector2f &ground_speed_vector);
+	void navigate_loiter(const math::Vector<2> &vector_A, const math::Vector<2> &vector_curr_position, float radius,
+	                     int8_t loiter_direction,
+	                     const math::Vector<2> &ground_speed_vector, float airspeed, const float heading);
+
 
 	/**
 	 * Navigate on a fixed bearing.
@@ -168,7 +208,8 @@ public:
 	 *
 	 * @return sets _lateral_accel setpoint
 	 */
-	void navigate_heading(float navigation_heading, float current_heading, const matrix::Vector2f &ground_speed);
+	void navigate_heading(float navigation_heading, float current_heading, const math::Vector<2> &ground_speed);
+
 
 	/**
 	 * Keep the wings level.
@@ -178,53 +219,61 @@ public:
 	 */
 	void navigate_level_flight(float current_heading);
 
+
 	/**
 	 * Set the L1 period.
 	 */
-	void set_l1_period(float period);
+	void set_l1_period(float period)
+	{
+		_L1_period = period;
+		/* calculate the ratio introduced in [2] */
+		_L1_ratio = 1.0f / M_PI_F * _L1_damping * _L1_period;
+		/* calculate normalized frequency for heading tracking */
+		_heading_omega = sqrtf(2.0f) * M_PI_F / _L1_period;
+	}
+
 
 	/**
 	 * Set the L1 damping factor.
 	 *
 	 * The original publication recommends a default of sqrt(2) / 2 = 0.707
 	 */
-	void set_l1_damping(float damping);
+	void set_l1_damping(float damping)
+	{
+		_L1_damping = damping;
+		/* calculate the ratio introduced in [2] */
+		_L1_ratio = 1.0f / M_PI_F * _L1_damping * _L1_period;
+		/* calculate the L1 gain (following [2]) */
+		_K_L1 = 4.0f * _L1_damping * _L1_damping;
+	}
+
 
 	/**
 	 * Set the maximum roll angle output in radians
+	 *
 	 */
-	void set_l1_roll_limit(float roll_lim_rad) { _roll_lim_rad = roll_lim_rad; }
-
-	/**
-	 * Set roll angle slew rate. Set to zero to deactivate.
-	 */
-	void set_roll_slew_rate(float roll_slew_rate) { _roll_slew_rate = roll_slew_rate; }
-
-	/**
-	 * Set control loop dt. The value will be used to apply roll angle setpoint slew rate limiting.
-	 */
-	void set_dt(float dt) { _dt = dt;}
+	void set_l1_roll_limit(float roll_lim_rad)
+	{
+		_roll_lim_rad = roll_lim_rad;
+	}
 
 private:
 
-	float _lateral_accel{0.0f};		///< Lateral acceleration setpoint in m/s^2
-	float _L1_distance{20.0f};		///< L1 lead distance, defined by period and damping
-	bool _circle_mode{false};		///< flag for loiter mode
-	float _nav_bearing{0.0f};		///< bearing to L1 reference point
-	float _bearing_error{0.0f};		///< bearing error
-	float _crosstrack_error{0.0f};	///< crosstrack error in meters
-	float _target_bearing{0.0f};		///< the heading setpoint
+	float _lateral_accel;		///< Lateral acceleration setpoint in m/s^2
+	float _L1_distance;		///< L1 lead distance, defined by period and damping
+	bool _circle_mode;		///< flag for loiter mode
+	float _nav_bearing;		///< bearing to L1 reference point
+	float _bearing_error;		///< bearing error
+	float _crosstrack_error;	///< crosstrack error in meters
+	float _target_bearing;		///< the heading setpoint
 
-	float _L1_period{25.0f};		///< L1 tracking period in seconds
-	float _L1_damping{0.75f};		///< L1 damping ratio
-	float _L1_ratio{5.0f};		///< L1 ratio for navigation
-	float _K_L1{2.0f};			///< L1 control gain for _L1_damping
-	float _heading_omega{1.0f};		///< Normalized frequency
+	float _L1_period;		///< L1 tracking period in seconds
+	float _L1_damping;		///< L1 damping ratio
+	float _L1_ratio;		///< L1 ratio for navigation
+	float _K_L1;			///< L1 control gain for _L1_damping
+	float _heading_omega;		///< Normalized frequency
 
-	float _roll_lim_rad{math::radians(30.0f)};  ///<maximum roll angle in radians
-	float _roll_setpoint{0.0f};	///< current roll angle setpoint in radians
-	float _roll_slew_rate{0.0f};	///< roll angle setpoint slew rate limit in rad/s
-	float _dt{0};				///< control loop time in seconds
+	float _roll_lim_rad;  ///<maximum roll angle
 
 	/**
 	 * Convert a 2D vector from WGS84 to planar coordinates.
@@ -237,15 +286,15 @@ private:
 	 * @param wp The point to convert to into the local coordinates, in WGS84 coordinates
 	 * @return The vector in meters pointing from the reference position to the coordinates
 	 */
-	matrix::Vector2f get_local_planar_vector(const matrix::Vector2f &origin, const matrix::Vector2f &target) const;
+	math::Vector<2> get_local_planar_vector(const math::Vector<2> &origin, const math::Vector<2> &target) const;
 
 	/**
-	 * Update roll angle setpoint. This will also apply slew rate limits if set.
+	 * Checks bearing feasibility in windspeed to airspeed ratios greater than 1
 	 *
+	 * @return feasibility boolean
 	 */
-	void update_roll_setpoint();
+	bool checkBearingTarget(float bearing, float bnd_min, float bnd_max);
 
 };
-
 
 #endif /* ECL_L1_POS_CONTROLLER_H */
