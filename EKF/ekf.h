@@ -249,6 +249,16 @@ public:
 	// use the latest IMU data at the current time horizon.
 	Quatf calculate_quaternion() const;
 
+	void get_R_rng_to_earth_2_2(float *ret); // WINGTRA
+
+	bool vel_is_rejected(); // WINGTRA: return true if velocity test ratio is > 1
+
+	// perform a limited reset of the wind state covariances WINGTRA: Make public
+	void resetWindCovariance();
+
+	// perform a reset of the wind states WINGTRA: Make public
+	void resetWindStates();
+
 private:
 
 	static constexpr uint8_t _k_num_states{24};		///< number of EKF states
@@ -439,6 +449,7 @@ private:
 	float _sin_tilt_rng{0.0f};		///< sine of the range finder tilt rotation about the Y body axis
 	float _cos_tilt_rng{0.0f};		///< cosine of the range finder tilt rotation about the Y body axis
 	float _R_rng_to_earth_2_2{0.0f};	///< 2,2 element of the rotation matrix from sensor frame to earth frame
+	float _R_rng_to_earth_2_2_now{0.0f};	///< WINGTRA: 2,2 element of the rotation matrix from sensor frame to earth frame at the current time
 	bool _range_data_continuous{false};	///< true when we are receiving range finder data faster than a 2Hz average
 	float _dt_last_range_update_filt_us{0.0f};	///< filtered value of the delta time elapsed since the last range measurement came into the filter (uSec)
 	bool _hagl_valid{false};		///< true when the height above ground estimate is valid
@@ -665,10 +676,10 @@ private:
 	void resetMagCovariance();
 
 	// perform a limited reset of the wind state covariances
-	void resetWindCovariance();
+	// void resetWindCovariance(); // WINGTRA: Made public
 
 	// perform a reset of the wind states
-	void resetWindStates();
+	// void resetWindStates(); // WINGTRA: Made public
 
 	// check that the range finder data is continuous
 	void checkRangeDataContinuity();
