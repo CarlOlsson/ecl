@@ -48,9 +48,7 @@
 
 #pragma once
 
-#include <stdbool.h>
-#include <stdint.h>
-#include <systemlib/perf_counter.h>
+#include <ecl.h>
 
 struct ECL_ControlData {
 	float roll;
@@ -74,11 +72,11 @@ struct ECL_ControlData {
 	bool lock_integrator;
 };
 
-class __EXPORT ECL_Controller
+class ECL_Controller
 {
 public:
 	ECL_Controller(const char *name);
-	~ECL_Controller() = default;
+	virtual ~ECL_Controller() = default;
 
 	virtual float control_attitude(const struct ECL_ControlData &ctl_data) = 0;
 	virtual float control_euler_rate(const struct ECL_ControlData &ctl_data) = 0;
@@ -91,7 +89,7 @@ public:
 	void set_k_ff(float k_ff);
 	void set_integrator_max(float max);
 	void set_max_rate(float max_rate);
-	void set_bodyrate_setpoint(float rate) {_bodyrate_setpoint = rate;}
+	void set_bodyrate_setpoint(float rate);
 
 	/* Getters */
 	float get_rate_error();

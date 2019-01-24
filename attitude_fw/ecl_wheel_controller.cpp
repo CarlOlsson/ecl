@@ -39,13 +39,12 @@
  */
 
 #include "ecl_wheel_controller.h"
-#include <stdint.h>
 #include <float.h>
 #include <geo/geo.h>
-#include <ecl/ecl.h>
 #include <mathlib/mathlib.h>
-#include <systemlib/err.h>
-#include <ecl/ecl.h>
+#include <matrix/math.hpp>
+
+using matrix::wrap_pi;
 
 ECL_WheelController::ECL_WheelController() :
 	ECL_Controller("wheel")
@@ -55,9 +54,9 @@ ECL_WheelController::ECL_WheelController() :
 float ECL_WheelController::control_bodyrate(const struct ECL_ControlData &ctl_data)
 {
 	/* Do not calculate control signal with bad inputs */
-	if (!(PX4_ISFINITE(ctl_data.body_z_rate) &&
-	      PX4_ISFINITE(ctl_data.groundspeed) &&
-	      PX4_ISFINITE(ctl_data.groundspeed_scaler))) {
+	if (!(ISFINITE(ctl_data.body_z_rate) &&
+	      ISFINITE(ctl_data.groundspeed) &&
+	      ISFINITE(ctl_data.groundspeed_scaler))) {
 		return math::constrain(_last_output, -1.0f, 1.0f);
 	}
 
@@ -95,16 +94,13 @@ float ECL_WheelController::control_bodyrate(const struct ECL_ControlData &ctl_da
 			id = math::min(id, 0.0f);
 		}
 
-		_integrator += id * _k_i;
+		/* add and constrain */
+		_integrator = math::constrain(_integrator + id * _k_i, -_integrator_max, _integrator_max);
 	}
-
-	/* integrator limit */
-	//xxx: until start detection is available: integral part in control signal is limited here
-	float integrator_constrained = math::constrain(_integrator, -_integrator_max, _integrator_max);
 
 	/* Apply PI rate controller and store non-limited output */
 	_last_output = _rate_setpoint * _k_ff * ctl_data.groundspeed_scaler +
-		       ctl_data.groundspeed_scaler * ctl_data.groundspeed_scaler * (_rate_error * _k_p + integrator_constrained);
+		       ctl_data.groundspeed_scaler * ctl_data.groundspeed_scaler * (_rate_error * _k_p + _integrator);
 
 	return math::constrain(_last_output, -1.0f, 1.0f);
 }
@@ -113,13 +109,13 @@ float ECL_WheelController::control_bodyrate(const struct ECL_ControlData &ctl_da
 float ECL_WheelController::control_attitude(const struct ECL_ControlData &ctl_data)
 {
 	/* Do not calculate control signal with bad inputs */
-	if (!(PX4_ISFINITE(ctl_data.yaw_setpoint) &&
-	      PX4_ISFINITE(ctl_data.yaw))) {
+	if (!(ISFINITE(ctl_data.yaw_setpoint) &&
+	      ISFINITE(ctl_data.yaw))) {
 		return _rate_setpoint;
 	}
 
 	/* Calculate the error */
-	float yaw_error = _wrap_pi(ctl_data.yaw_setpoint - ctl_data.yaw);
+	float yaw_error = wrap_pi(ctl_data.yaw_setpoint - ctl_data.yaw);
 
 	/*  Apply P controller: rate setpoint from current error and time constant */
 	_rate_setpoint =  yaw_error / _tc;

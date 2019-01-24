@@ -42,7 +42,7 @@ from __future__ import absolute_import
 
 import pytest
 
-from test_utils import ecl
+from test_utils import ecl_EKF
 
 # Pylint does not like pytest fixtures, disable the warning
 # pylint: disable=redefined-outer-name
@@ -54,7 +54,7 @@ def test_filter_initialized(initialized_ekf):
     """Make sure the EKF updates after a few IMU, Mag and Baro updates
     """
     ekf, _ = initialized_ekf
-    assert ekf.update()
+    assert ekf.attitude_valid()
 
 
 @pytest.mark.benchmark
@@ -93,7 +93,7 @@ def test_status_on_imu_mag_baro(initialized_ekf):
 def test_converges_to_zero():
     """Make sure the EKF with zero inputs converges to / stays at zero
     """
-    ekf = ecl.Ekf()
+    ekf = ecl_EKF.Ekf()
 
     time_usec = 1000
     dt_usec = 5000

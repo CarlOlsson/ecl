@@ -39,9 +39,10 @@
  * @author Paul Riseborough <p_riseborough@live.com.au>
  *
  */
-#include "../ecl.h"
+
 #include "ekf.h"
-#include "mathlib.h"
+#include <ecl.h>
+#include <mathlib/mathlib.h>
 
 void Ekf::fuseMag()
 {
@@ -145,11 +146,14 @@ void Ekf::fuseMag()
 
 	// Perform an innovation consistency check and report the result
 	bool healthy = true;
+
 	for (uint8_t index = 0; index <= 2; index++) {
 		_mag_test_ratio[index] = sq(_mag_innov[index]) / (sq(math::max(_params.mag_innov_gate, 1.0f)) * _mag_innov_var[index]);
+
 		if (_mag_test_ratio[index] > 1.0f) {
 			healthy = false;
 			_innov_check_fail_status.value |= (1 << (index + 3));
+
 		} else {
 			_innov_check_fail_status.value &= ~(1 << (index + 3));
 		}
@@ -212,6 +216,7 @@ void Ekf::fuseMag()
 				for (uint8_t i = 0; i < 16; i++) {
 					Kfusion[i] = 0.0f;
 				}
+
 				Kfusion[22] = 0.0f;
 				Kfusion[23] = 0.0f;
 			}
@@ -266,6 +271,7 @@ void Ekf::fuseMag()
 				for (uint8_t i = 0; i < 16; i++) {
 					Kfusion[i] = 0.0f;
 				}
+
 				Kfusion[22] = 0.0f;
 				Kfusion[23] = 0.0f;
 			}
@@ -320,6 +326,7 @@ void Ekf::fuseMag()
 				for (uint8_t i = 0; i < 16; i++) {
 					Kfusion[i] = 0.0f;
 				}
+
 				Kfusion[22] = 0.0f;
 				Kfusion[23] = 0.0f;
 			}
@@ -340,6 +347,7 @@ void Ekf::fuseMag()
 		// then calculate P - KHP
 		float KHP[_k_num_states][_k_num_states];
 		float KH[10];
+
 		for (unsigned row = 0; row < _k_num_states; row++) {
 
 			KH[0] = Kfusion[row] * H_MAG[0];
@@ -373,11 +381,12 @@ void Ekf::fuseMag()
 		_fault_status.flags.bad_mag_x = false;
 		_fault_status.flags.bad_mag_y = false;
 		_fault_status.flags.bad_mag_z = false;
+
 		for (int i = 0; i < _k_num_states; i++) {
 			if (P[i][i] < KHP[i][i]) {
 				// zero rows and columns
-				zeroRows(P,i,i);
-				zeroCols(P,i,i);
+				zeroRows(P, i, i);
+				zeroCols(P, i, i);
 
 				//flag as unhealthy
 				healthy = false;
@@ -385,8 +394,10 @@ void Ekf::fuseMag()
 				// update individual measurement health status
 				if (index == 0) {
 					_fault_status.flags.bad_mag_x = true;
+
 				} else if (index == 1) {
 					_fault_status.flags.bad_mag_y = true;
+
 				} else if (index == 2) {
 					_fault_status.flags.bad_mag_z = true;
 				}
@@ -472,6 +483,7 @@ void Ekf::fuseHeading()
 			if (_control_status.flags.mag_3D) {
 				// don't apply bias corrections if we are learning them
 				mag_earth_pred = R_to_earth * _mag_sample_delayed.mag;
+
 			} else {
 				mag_earth_pred = R_to_earth * (_mag_sample_delayed.mag - _state.mag_B);
 			}
@@ -511,6 +523,7 @@ void Ekf::fuseHeading()
 		float t12 = t8*t11*4.0f;
 		float t13 = t12+1.0f;
 		float t14;
+
 		if (fabsf(t13) > 1e-6f) {
 			t14 = 1.0f/t13;
 		} else {
@@ -589,18 +602,55 @@ void Ekf::fuseHeading()
 	if (_control_status.flags.mag_hdg) {
 		// using magnetic heading tuning parameter
 		R_YAW = sq(fmaxf(_params.mag_heading_noise, 1.0e-2f));
+
 	} else if (_control_status.flags.ev_yaw) {
 		// using error estimate from external vision data
 		R_YAW = sq(fmaxf(_ev_sample_delayed.angErr, 1.0e-2f));
+
 	} else {
 		// there is no yaw observation
 		return;
 	}
 
-	// Calculate innovation variance and Kalman gains, taking advantage of the fact that only the first 3 elements in H are non zero
+	// wrap the heading to the interval between +-pi
+	measured_hdg = wrap_pi(measured_hdg);
+
+	// calculate the innovation and define the innovaton gate
+	float innov_gate = math::max(_params.heading_innov_gate, 1.0f);
+	if (_mag_use_inhibit) {
+		// The magnetomer cannot be trusted but we need to fuse a heading to prevent a badly
+		// conditoned covariance matrix developing over time.
+		if (!_vehicle_at_rest) {
+			// Vehicle is not at rest so fuse a zero innovation and record the
+			// predicted heading to use as an observation when movement ceases.
+			_heading_innov = 0.0f;
+			_vehicle_at_rest_prev = false;
+		} else {
+			// Vehicle is at rest so use the last moving prediciton as an observation
+			// to prevent the heading from drifting and to enable yaw gyro bias learning
+			// before takeoff.
+			if (!_vehicle_at_rest_prev || !_mag_use_inhibit_prev) {
+				_last_static_yaw = predicted_hdg;
+				_vehicle_at_rest_prev = true;
+			}
+			_heading_innov = predicted_hdg - _last_static_yaw;
+			R_YAW = 0.01f;
+			innov_gate = 5.0f;
+		}
+	} else {
+		_heading_innov = predicted_hdg - measured_hdg;
+		_last_static_yaw = predicted_hdg;
+	}
+	_mag_use_inhibit_prev = _mag_use_inhibit;
+
+	// wrap the innovation to the interval between +-pi
+	_heading_innov = wrap_pi(_heading_innov);
+
+	// Calculate innovation variance and Kalman gains, taking advantage of the fact that only the first 4 elements in H are non zero
 	// calculate the innovaton variance
 	float PH[4];
 	_heading_innov_var = R_YAW;
+
 	for (unsigned row = 0; row <= 3; row++) {
 		PH[row] = 0.0f;
 
@@ -616,12 +666,12 @@ void Ekf::fuseHeading()
 	// check if the innovation variance calculation is badly conditioned
 	if (_heading_innov_var >= R_YAW) {
 		// the innovation variance contribution from the state covariances is not negative, no fault
-		_fault_status.flags.bad_mag_hdg = false;
+		_fault_status.flags.bad_hdg = false;
 		heading_innov_var_inv = 1.0f / _heading_innov_var;
 
 	} else {
 		// the innovation variance contribution from the state covariances is negative which means the covariance matrix is badly conditioned
-		_fault_status.flags.bad_mag_hdg = true;
+		_fault_status.flags.bad_hdg = true;
 
 		// we reinitialise the covariance matrix and abort this fusion step
 		initialiseCovariance();
@@ -655,17 +705,8 @@ void Ekf::fuseHeading()
 		}
 	}
 
-	// wrap the heading to the interval between +-pi
-	measured_hdg = wrap_pi(measured_hdg);
-
-	// calculate the innovation
-	_heading_innov = predicted_hdg - measured_hdg;
-
-	// wrap the innovation to the interval between +-pi
-	_heading_innov = wrap_pi(_heading_innov);
-
 	// innovation test ratio
-	_yaw_test_ratio = sq(_heading_innov) / (sq(math::max(_params.heading_innov_gate, 1.0f)) * _heading_innov_var);
+	_yaw_test_ratio = sq(_heading_innov) / (sq(innov_gate) * _heading_innov_var);
 
 	// we are no longer using 3-axis fusion so set the reported test levels to zero
 	memset(_mag_test_ratio, 0, sizeof(_mag_test_ratio));
@@ -682,7 +723,7 @@ void Ekf::fuseHeading()
 
 		} else {
 			// constrain the innovation to the maximum set by the gate
-			float gate_limit = sqrtf((sq(math::max(_params.heading_innov_gate, 1.0f)) * _heading_innov_var));
+			float gate_limit = sqrtf((sq(innov_gate) * _heading_innov_var));
 			_heading_innov = math::constrain(_heading_innov, -gate_limit, gate_limit);
 		}
 
@@ -695,6 +736,7 @@ void Ekf::fuseHeading()
 	// then calculate P - KHP
 	float KHP[_k_num_states][_k_num_states];
 	float KH[4];
+
 	for (unsigned row = 0; row < _k_num_states; row++) {
 
 		KH[0] = Kfusion[row] * H_YAW[0];
@@ -714,18 +756,19 @@ void Ekf::fuseHeading()
 	// if the covariance correction will result in a negative variance, then
 	// the covariance marix is unhealthy and must be corrected
 	bool healthy = true;
-	_fault_status.flags.bad_mag_hdg = false;
+	_fault_status.flags.bad_hdg = false;
+
 	for (int i = 0; i < _k_num_states; i++) {
 		if (P[i][i] < KHP[i][i]) {
 			// zero rows and columns
-			zeroRows(P,i,i);
-			zeroCols(P,i,i);
+			zeroRows(P, i, i);
+			zeroCols(P, i, i);
 
 			//flag as unhealthy
 			healthy = false;
 
 			// update individual measurement health status
-			_fault_status.flags.bad_mag_hdg = true;
+			_fault_status.flags.bad_hdg = true;
 
 		}
 	}
@@ -852,8 +895,8 @@ void Ekf::fuseDeclination()
 	for (int i = 0; i < _k_num_states; i++) {
 		if (P[i][i] < KHP[i][i]) {
 			// zero rows and columns
-			zeroRows(P,i,i);
-			zeroCols(P,i,i);
+			zeroRows(P, i, i);
+			zeroCols(P, i, i);
 
 			//flag as unhealthy
 			healthy = false;

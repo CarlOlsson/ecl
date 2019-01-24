@@ -40,12 +40,13 @@
  */
 
 #include "ekf.h"
-#include "mathlib.h"
+#include <ecl.h>
+#include <mathlib/mathlib.h>
 
 bool Ekf::initHagl()
 {
 	// get most recent range measurement from buffer
-	const rangeSample& latest_measurement = _range_buffer.get_newest();
+	const rangeSample &latest_measurement = _range_buffer.get_newest();
 
 	if ((_time_last_imu - latest_measurement.time_us) < (uint64_t)2e5 && _R_rng_to_earth_2_2 > _params.range_cos_max_tilt) {
 		// if we have a fresh measurement, use it to initialise the terrain estimator
@@ -75,7 +76,7 @@ void Ekf::runTerrainEstimator()
 	checkRangeDataContinuity();
 
 	// Perform initialisation check
-	if (!_terrain_initialised || _terrain_var > 100.0f) { // WINGTRA: Reinitialize terrain estimate if variance is very large
+	if (!_terrain_initialised) {
 		_terrain_initialised = initHagl();
 
 	} else {
@@ -93,7 +94,7 @@ void Ekf::runTerrainEstimator()
 		_terrain_var = math::constrain(_terrain_var, 0.0f, 1e4f);
 
 		// Fuse range finder data if available
-		if (_range_data_ready && !_control_status.flags.rng_stuck) {
+		if (_range_data_ready && !_rng_hgt_faulty) {
 			fuseHagl();
 
 			// update range sensor angle parameters in case they have changed
@@ -108,6 +109,9 @@ void Ekf::runTerrainEstimator()
 			_terrain_vpos = _params.rng_gnd_clearance + _state.pos(2);
 		}
 	}
+
+	// Update terrain validity
+	update_terrain_valid();
 }
 
 void Ekf::fuseHagl()
@@ -124,7 +128,7 @@ void Ekf::fuseHagl()
 		_hagl_innov = pred_hagl - meas_hagl;
 
 		// calculate the observation variance adding the variance of the vehicles own height uncertainty
-		float obs_variance = fmaxf(P[9][9], 0.0f) + sq(_params.range_noise) + sq(_params.range_noise_scaler * _range_sample_delayed.rng);
+		float obs_variance = fmaxf(P[9][9] * _params.vehicle_variance_scaler, 0.0f) + sq(_params.range_noise) + sq(_params.range_noise_scaler * _range_sample_delayed.rng);
 
 		// calculate the innovation variance - limiting it to prevent a badly conditioned fusion
 		_hagl_innov_var = fmaxf(_terrain_var + obs_variance, obs_variance);
@@ -143,27 +147,36 @@ void Ekf::fuseHagl()
 			// record last successful fusion event
 			_time_last_hagl_fuse = _time_last_imu;
 			_innov_check_fail_status.flags.reject_hagl = false;
-
 		} else {
-			_innov_check_fail_status.flags.reject_hagl = true;
-
+			// If we have been rejecting range data for too long, reset to measurement
+			if (_time_last_imu - _time_last_hagl_fuse > (uint64_t)10E6) {
+				_terrain_vpos = _state.pos(2) + meas_hagl;
+				_terrain_var = obs_variance;
+			} else {
+				_innov_check_fail_status.flags.reject_hagl = true;
+			}
 		}
-
 	} else {
 		_innov_check_fail_status.flags.reject_hagl = true;
 		return;
 	}
 }
 
-// return true if the terrain estimate is valid
+// return true if the terrain height estimate is valid
 bool Ekf::get_terrain_valid()
 {
-	if (_terrain_initialised && !_control_status.flags.rng_stuck && // WINGTRA: remove _range_data_continuous
-		  (_time_last_imu - _time_last_hagl_fuse < (uint64_t)5e6)) {
-		return true;
+	return _hagl_valid;
+}
+
+// determine terrain validity
+void Ekf::update_terrain_valid()
+{
+	if (_terrain_initialised && (_time_last_imu - _time_last_hagl_fuse < (uint64_t)5e6)) {
+
+		_hagl_valid = true;
 
 	} else {
-		return false;
+		_hagl_valid = false;
 	}
 }
 
@@ -193,7 +206,7 @@ void Ekf::checkRangeDataContinuity()
 	/* Apply a 2.0 sec low pass filter to the time delta from the last range finder updates */
 	float alpha = 0.5f * _dt_update;
 	_dt_last_range_update_filt_us = _dt_last_range_update_filt_us * (1.0f - alpha) + alpha *
-					(_time_last_imu - _time_last_range);
+					(_imu_sample_delayed.time_us - _range_sample_delayed.time_us);
 
 	_dt_last_range_update_filt_us = fminf(_dt_last_range_update_filt_us, 4e6f);
 
@@ -203,16 +216,4 @@ void Ekf::checkRangeDataContinuity()
 	} else {
 		_range_data_continuous = false;
 	}
-}
-
-// WINGTRA
-void Ekf::get_R_rng_to_earth_2_2(float *ret)
-{
-	memcpy(ret, &_R_rng_to_earth_2_2_now, sizeof(float));
-}
-
-// WINGTRA
-void Ekf::get_terrain_var(float *ret)
-{
-	memcpy(ret, &_terrain_var, sizeof(float));
 }
