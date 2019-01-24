@@ -218,6 +218,12 @@ void Ekf::checkRangeDataContinuity()
 	}
 }
 
+// WINGTRA
+void Ekf::get_R_rng_to_earth_2_2(float *ret)
+{
+	memcpy(ret, &_R_rng_to_earth_2_2_now, sizeof(float));
+}
+
 void Ekf::get_terrain_var(float *ret)
 {
 	memcpy(ret, &_terrain_var, sizeof(float));
