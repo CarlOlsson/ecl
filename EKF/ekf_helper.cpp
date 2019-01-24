@@ -1647,3 +1647,9 @@ void Ekf::get_ekf2ev_quaternion(float *quat)
 		quat[i] = quat_ekf2ev(i);
 	}
 }
+
+// WINGTRA: return true if velocity test ratio is < 1
+bool Ekf::vel_is_rejected()
+{
+	return (_innov_check_fail_status.value & 1) || _is_wind_dead_reckoning;	
+}
