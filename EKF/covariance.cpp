@@ -106,6 +106,9 @@ void Ekf::initialiseCovariance()
 		P[index][index] = sq(_params.mag_noise);
 	}
 
+	// save covariance data for re-use when auto-switching between heading and 3-axis fusion
+	save_mag_cov_data();
+
 	// wind
 	P[22][22] = sq(_params.initial_wind_uncertainty);
 	P[23][23] = sq(_params.initial_wind_uncertainty);
@@ -888,11 +891,15 @@ void Ekf::resetMagCovariance()
 	// set the magnetic field covariance terms to zero
 	zeroRows(P, 16, 21);
 	zeroCols(P, 16, 21);
+	_mag_decl_cov_reset = false;
 
 	// set the field state variance to the observation variance
 	for (uint8_t rc_index = 16; rc_index <= 21; rc_index ++) {
 		P[rc_index][rc_index] = sq(_params.mag_noise);
 	}
+
+	// save covariance data for re-use when auto-switching between heading and 3-axis fusion
+	save_mag_cov_data();
 }
 
 void Ekf::resetWindCovariance()
