@@ -97,10 +97,9 @@ bool Ekf::init(uint64_t timestamp)
 	return ret;
 }
 
+// WINGTRA: Use old update function to be compatible with ekf2_main.cpp
 bool Ekf::update()
 {
-	bool updated = false;
-
 	if (!_filter_initialised) {
 		_filter_initialised = initialiseFilter();
 
@@ -122,14 +121,18 @@ bool Ekf::update()
 		// run a separate filter for terrain estimation
 		runTerrainEstimator();
 
-		updated = true;
 	}
 
 	// the output observer always runs
-	// Use full rate IMU data at the current time horizon
 	calculateOutputStates();
 
-	return updated;
+	// check for NaN or inf on attitude states
+	if (!ISFINITE(_state.quat_nominal(0)) || !ISFINITE(_output_new.quat_nominal(0))) {
+		return false;
+	}
+
+	// We don't have valid data to output until tilt and yaw alignment is complete
+	return _control_status.flags.tilt_align && _control_status.flags.yaw_align;
 }
 
 bool Ekf::initialiseFilter()
