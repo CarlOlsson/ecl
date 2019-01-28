@@ -259,6 +259,13 @@ public:
 	// perform a reset of the wind states WINGTRA: Make public
 	void resetWindStates();
 
+	// Increase the yaw error variance of the quaternions
+	// Argument is additional yaw variance in rad**2
+	void increaseQuatYawErrVariance(float yaw_variance); // WINGTRA: Made public
+	
+	// uncorrelate quaternion states from other states
+	void uncorrelateQuatStates(); // WINGTRA: Made public
+
 private:
 
 	static constexpr uint8_t _k_num_states{24};		///< number of EKF states
@@ -689,12 +696,12 @@ private:
 
 	// Increase the yaw error variance of the quaternions
 	// Argument is additional yaw variance in rad**2
-	void increaseQuatYawErrVariance(float yaw_variance);
+	// void increaseQuatYawErrVariance(float yaw_variance); // WINGTRA: Made public
 
 	// save mag field state covariance data for re-use
 	void save_mag_cov_data();
 
 	// uncorrelate quaternion states from other states
-	void uncorrelateQuatStates();
+	// void uncorrelateQuatStates(); // WINGTRA: Made public
 
 };
