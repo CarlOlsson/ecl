@@ -1388,7 +1388,8 @@ void Ekf::controlMagFusion()
 		if (!_control_status.flags.mag_align_complete) {
 			// Check if height has increased sufficiently to be away from ground magnetic anomalies
 			// and request a yaw reset if not already requested.
-			// _mag_yaw_reset_req |= (_last_on_ground_posD - _state.pos(2)) > 1.5f; // WINGTRA: We already do this further down
+			float terrain_vpos_estimate = get_terrain_valid() ? _terrain_vpos : _last_on_ground_posD; // WINGTRA
+			_mag_yaw_reset_req |= (terrain_vpos_estimate - _state.pos(2)) > 1.5f; // WINGTRA
 		}
 
 		// perform a yaw reset if requested by other functions
@@ -1409,7 +1410,7 @@ void Ekf::controlMagFusion()
 		} else if (_params.mag_fusion_type == MAG_FUSE_TYPE_AUTO || _params.mag_fusion_type == MAG_FUSE_TYPE_AUTOFW) {
 			// Check if height has increased sufficiently to be away from ground magnetic anomalies
 			float terrain_vpos_estimate = get_terrain_valid() ? _terrain_vpos : _last_on_ground_posD; // WINGTRA
-			bool height_achieved = (terrain_vpos_estimate - _state.pos(2)) > 1.5f; // WINGTRA
+			bool height_achieved = (terrain_vpos_estimate - _state.pos(2)) > 1.7f; // WINGTRA: Increased alt. to not interfere with reset logic above
 
 			// Check if there has been enough change in horizontal velocity to make yaw observable
 			// Apply hysteresis to check to avoid rapid toggling
