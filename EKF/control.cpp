@@ -215,6 +215,10 @@ void Ekf::controlExternalVisionFusion()
 
 				// calculate initial quaternion states for the ekf
 				_state.quat_nominal = Quatf(euler_init);
+				uncorrelateQuatStates();
+
+				// adjust the quaternion covariances estimated yaw error
+				increaseQuatYawErrVariance(sq(fmaxf(_ev_sample_delayed.angErr, 1.0e-2f)));
 
 				// calculate the amount that the quaternion has changed by
 				_state_reset_status.quat_change = quat_before_reset.inversed() * _state.quat_nominal;
@@ -235,11 +239,16 @@ void Ekf::controlExternalVisionFusion()
 				// flag the yaw as aligned
 				_control_status.flags.yaw_align = true;
 
-				// turn on fusion of external vision yaw measurements and disable all magnetoemter fusion
+				// turn on fusion of external vision yaw measurements and disable all magnetometer fusion
 				_control_status.flags.ev_yaw = true;
 				_control_status.flags.mag_hdg = false;
-				_control_status.flags.mag_3D = false;
 				_control_status.flags.mag_dec = false;
+
+				// save covariance data for re-use if currently doing 3-axis fusion
+				if (_control_status.flags.mag_3D) {
+					save_mag_cov_data();
+					_control_status.flags.mag_3D = false;
+				}
 
 				ECL_INFO("EKF commencing external vision yaw fusion");
 			}
@@ -526,8 +535,13 @@ void Ekf::controlGpsFusion()
 				_control_status.flags.gps_yaw = true;
 				_control_status.flags.ev_yaw = false;
 				_control_status.flags.mag_hdg = false;
-				_control_status.flags.mag_3D = false;
 				_control_status.flags.mag_dec = false;
+
+				// save covariance data for re-use if currently doing 3-axis fusion
+				if (_control_status.flags.mag_3D) {
+					save_mag_cov_data();
+					_control_status.flags.mag_3D = false;
+				}
 
 				ECL_INFO("EKF commencing GPS yaw fusion");
 			}
@@ -610,7 +624,7 @@ void Ekf::controlGpsFusion()
 				// use GPS velocity data to check and correct yaw angle if a FW vehicle
 				if (_control_status.flags.fixed_wing && _control_status.flags.in_air) {
 					// if flying a fixed wing aircraft, do a complete reset that includes yaw
-					realignYawGPS();
+					_control_status.flags.mag_align_complete = realignYawGPS();
 				}
 
 				resetVelocity();
@@ -1342,11 +1356,18 @@ void Ekf::controlDragFusion()
 void Ekf::controlMagFusion()
 {
 	if (_params.mag_fusion_type >= MAG_FUSE_TYPE_NONE) {
+
 		// do not use the magnetomer and deactivate magnetic field states
+		// save covariance data for re-use if currently doing 3-axis fusion
+		if (_control_status.flags.mag_3D) {
+			save_mag_cov_data();
+			_control_status.flags.mag_3D = false;
+		}
 		zeroRows(P, 16, 21);
 		zeroCols(P, 16, 21);
+		_mag_decl_cov_reset = false;
 		_control_status.flags.mag_hdg = false;
-		_control_status.flags.mag_3D = false;
+
 		return;
 	}
 
@@ -1367,7 +1388,8 @@ void Ekf::controlMagFusion()
 		if (!_control_status.flags.mag_align_complete) {
 			// Check if height has increased sufficiently to be away from ground magnetic anomalies
 			// and request a yaw reset if not already requested.
-			// _mag_yaw_reset_req |= (_last_on_ground_posD - _state.pos(2)) > 1.5f; // WINGTRA: We already do this further down
+			float terrain_vpos_estimate = get_terrain_valid() ? _terrain_vpos : _last_on_ground_posD; // WINGTRA
+			_mag_yaw_reset_req |= (terrain_vpos_estimate - _state.pos(2)) > 1.5f; // WINGTRA
 		}
 
 		// perform a yaw reset if requested by other functions
@@ -1388,7 +1410,7 @@ void Ekf::controlMagFusion()
 		} else if (_params.mag_fusion_type == MAG_FUSE_TYPE_AUTO || _params.mag_fusion_type == MAG_FUSE_TYPE_AUTOFW) {
 			// Check if height has increased sufficiently to be away from ground magnetic anomalies
 			float terrain_vpos_estimate = get_terrain_valid() ? _terrain_vpos : _last_on_ground_posD; // WINGTRA
-			bool height_achieved = (terrain_vpos_estimate - _state.pos(2)) > 1.5f; // WINGTRA
+			bool height_achieved = (terrain_vpos_estimate - _state.pos(2)) > 1.7f; // WINGTRA: Increased alt. to not interfere with reset logic above
 
 			// Check if there has been enough change in horizontal velocity to make yaw observable
 			// Apply hysteresis to check to avoid rapid toggling
@@ -1472,9 +1494,15 @@ void Ekf::controlMagFusion()
 						zeroRows(P, 16, 21);
 						zeroCols(P, 16, 21);
 
-						// re-instate the last used variances
-						for (uint8_t index = 0; index <= 5; index ++) {
-							P[index + 16][index + 16] = _saved_mag_variance[index];
+						// re-instate variances for the D earth axis and XYZ body axis field
+						for (uint8_t index = 0; index <= 3; index ++) {
+							P[index + 18][index + 18] = _saved_mag_bf_variance[index];
+						}
+						// re-instate the NE axis covariance sub-matrix
+						for (uint8_t row = 0; row <= 1; row ++) {
+							for (uint8_t col = 0; col <= 1; col ++) {
+								P[row + 16][col + 16] = _saved_mag_ef_covmat[row][col];
+							}
 						}
 					}
 				}
@@ -1484,12 +1512,9 @@ void Ekf::controlMagFusion()
 				_control_status.flags.mag_hdg = !_control_status.flags.mag_3D;
 
 			} else {
-				// save magnetic field state variances for next time
+				// save covariance data for re-use if currently doing 3-axis fusion
 				if (_control_status.flags.mag_3D) {
-					for (uint8_t index = 0; index <= 5; index ++) {
-						_saved_mag_variance[index] = P[index + 16][index + 16];
-					}
-
+					save_mag_cov_data();
 					_control_status.flags.mag_3D = false;
 				}
 
@@ -1509,22 +1534,31 @@ void Ekf::controlMagFusion()
 			// before they are used to constrain heading drift
 			_flt_mag_align_converging = ((_imu_sample_delayed.time_us - _flt_mag_align_start_time) < (uint64_t)5e6);
 
-			if (!_control_status.flags.update_mag_states_only && _control_status_prev.flags.update_mag_states_only) {
+			if (_control_status.flags.mag_3D && _control_status_prev.flags.update_mag_states_only && !_control_status.flags.update_mag_states_only) {
 				// When re-commencing use of magnetometer to correct vehicle states
 				// set the field state variance to the observation variance and zero
 				// the covariance terms to allow the field states re-learn rapidly
 				zeroRows(P, 16, 21);
 				zeroCols(P, 16, 21);
+				_mag_decl_cov_reset = false;
 
 				for (uint8_t index = 0; index <= 5; index ++) {
 					P[index + 16][index + 16] = sq(_params.mag_noise);
 				}
+
+				// save covariance data for re-use when auto-switching between heading and 3-axis fusion
+				save_mag_cov_data();
 			}
 
 		} else if (_params.mag_fusion_type == MAG_FUSE_TYPE_HEADING) {
 			// always use heading fusion
 			_control_status.flags.mag_hdg = true;
-			_control_status.flags.mag_3D = false;
+
+			// save covariance data for re-use if currently doing 3-axis fusion
+			if (_control_status.flags.mag_3D) {
+				save_mag_cov_data();
+				_control_status.flags.mag_3D = false;
+			}
 
 		} else if (_params.mag_fusion_type == MAG_FUSE_TYPE_3D) {
 			// if transitioning into 3-axis fusion mode, we need to initialise the yaw angle and field states
@@ -1540,7 +1574,13 @@ void Ekf::controlMagFusion()
 		} else {
 			// do no magnetometer fusion at all
 			_control_status.flags.mag_hdg = false;
-			_control_status.flags.mag_3D = false;
+
+			// save covariance data for re-use if currently doing 3-axis fusion
+			if (_control_status.flags.mag_3D) {
+				save_mag_cov_data();
+				_control_status.flags.mag_3D = false;
+			}
+
 		}
 
 		// if we are using 3-axis magnetometer fusion, but without external aiding, then the declination must be fused as an observation to prevent long term heading drift
@@ -1573,10 +1613,22 @@ void Ekf::controlMagFusion()
 
 		// fuse magnetometer data using the selected methods
 		if (_control_status.flags.mag_3D && _control_status.flags.yaw_align) {
-			fuseMag();
-
-			if (_control_status.flags.mag_dec) {
-				fuseDeclination();
+			if (!_mag_decl_cov_reset) {
+				// After any magnetic field covariance reset event the earth field state
+				// covariances need to be corrected to incorporate knowedge of the declination
+				// before fusing magnetomer data to prevent rapid rotation of the earth field
+				// states for the first few observations.
+				fuseDeclination(0.02f);
+				_mag_decl_cov_reset = true;
+				fuseMag();
+			} else {
+				// The normal sequence is to fuse the magnetometer data first before fusing
+				// declination angle at a higher uncertainty to allow some learning of
+				// declination angle over time.
+				fuseMag();
+				if (_control_status.flags.mag_dec) {
+					fuseDeclination(0.5f);
+				}
 			}
 
 		} else if (_control_status.flags.mag_hdg && _control_status.flags.yaw_align) {
