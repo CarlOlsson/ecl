@@ -273,7 +273,7 @@ void TECS::_detect_underspeed()
 	}
 
 	// WINGTRA: Removed altitude check for safety while turning
-	if (((_tas_state < _TAS_min * 0.9f) && (_throttle_setpoint >= _throttle_setpoint_max * 0.95f)) {
+	if ((_tas_state < _TAS_min * 0.9f) && (_throttle_setpoint >= _throttle_setpoint_max * 0.95f)) {
 
 		_underspeed_detected = true;
 
