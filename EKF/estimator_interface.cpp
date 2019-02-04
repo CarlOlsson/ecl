@@ -42,64 +42,57 @@
 
 #include "estimator_interface.h"
 
-#include "../ecl.h"
-#include <math.h>
-#include "mathlib.h"
+#include <ecl.h>
+#include <mathlib/mathlib.h>
 
 // Accumulate imu data and store to buffer at desired rate
-void EstimatorInterface::setIMUData(uint64_t time_usec, uint64_t delta_ang_dt, uint64_t delta_vel_dt,
-				    float (&delta_ang)[3], float (&delta_vel)[3])
+void EstimatorInterface::setIMUData(const imuSample &imu_sample)
 {
 	if (!_initialised) {
-		init(time_usec);
+		init(imu_sample.time_us);
 		_initialised = true;
 	}
 
-	const float dt = math::constrain((time_usec - _time_last_imu) / 1e6f, 1.0e-4f, 0.02f);
+	const float dt = math::constrain((imu_sample.time_us - _time_last_imu) / 1e6f, 1.0e-4f, 0.02f);
 
-	_time_last_imu = time_usec;
+	_time_last_imu = imu_sample.time_us;
 
 	if (_time_last_imu > 0) {
 		_dt_imu_avg = 0.8f * _dt_imu_avg + 0.2f * dt;
 	}
 
-	// copy data
-	imuSample imu_sample_new;
-	imu_sample_new.delta_ang = Vector3f(delta_ang);
-	imu_sample_new.delta_vel = Vector3f(delta_vel);
-
-	// convert time from us to secs
-	imu_sample_new.delta_ang_dt = delta_ang_dt / 1e6f;
-	imu_sample_new.delta_vel_dt = delta_vel_dt / 1e6f;
-	imu_sample_new.time_us = time_usec;
-	_imu_ticks++;
-
 	// calculate a metric which indicates the amount of coning vibration
-	Vector3f temp = cross_product(imu_sample_new.delta_ang, _delta_ang_prev);
+	Vector3f temp = cross_product(imu_sample.delta_ang, _delta_ang_prev);
 	_vibe_metrics[0] = 0.99f * _vibe_metrics[0] + 0.01f * temp.norm();
 
 	// calculate a metric which indiates the amount of high frequency gyro vibration
-	temp = imu_sample_new.delta_ang - _delta_ang_prev;
-	_delta_ang_prev = imu_sample_new.delta_ang;
+	temp = imu_sample.delta_ang - _delta_ang_prev;
+	_delta_ang_prev = imu_sample.delta_ang;
 	_vibe_metrics[1] = 0.99f * _vibe_metrics[1] + 0.01f * temp.norm();
 
 	// calculate a metric which indicates the amount of high fequency accelerometer vibration
-	temp = imu_sample_new.delta_vel - _delta_vel_prev;
-	_delta_vel_prev = imu_sample_new.delta_vel;
+	temp = imu_sample.delta_vel - _delta_vel_prev;
+	_delta_vel_prev = imu_sample.delta_vel;
 	_vibe_metrics[2] = 0.99f * _vibe_metrics[2] + 0.01f * temp.norm();
 
+	// detect if the vehicle is not moving when on ground
+	if (!_control_status.flags.in_air) {
+		if ((_vibe_metrics[1] * 4.0E4f > _params.is_moving_scaler)
+				|| (_vibe_metrics[2] * 2.1E2f > _params.is_moving_scaler)
+				|| ((imu_sample.delta_ang.norm() / dt) > 0.05f * _params.is_moving_scaler)) {
+
+			_time_last_move_detect_us = imu_sample.time_us;
+		}
+
+		_vehicle_at_rest = ((imu_sample.time_us - _time_last_move_detect_us) > (uint64_t)1E6);
+
+	} else {
+		_time_last_move_detect_us = imu_sample.time_us;
+		_vehicle_at_rest = false;
+	}
+
 	// accumulate and down-sample imu data and push to the buffer when new downsampled data becomes available
-	if (collect_imu(imu_sample_new)) {
-		_imu_buffer.push(imu_sample_new);
-		_imu_ticks = 0;
-		_imu_updated = true;
-
-		// get the oldest data from the buffer
-		_imu_sample_delayed = _imu_buffer.get_oldest();
-
-		// calculate the minimum interval between observations required to guarantee no loss of data
-		// this will occur if data is overwritten before its time stamp falls behind the fusion time horizon
-		_min_obs_interval_us = (_imu_sample_new.time_us - _imu_sample_delayed.time_us) / (_obs_buffer_length - 1);
+	if (collect_imu(imu_sample)) {
 
 		// down-sample the drag specific force data by accumulating and calculating the mean when
 		// sufficient samples have been collected
@@ -109,6 +102,7 @@ void EstimatorInterface::setIMUData(uint64_t time_usec, uint64_t delta_ang_dt, u
 			// Do not retry if allocation has failed previously
 			if (_drag_buffer.get_length() < _obs_buffer_length) {
 				_drag_buffer_fail = !_drag_buffer.allocate(_obs_buffer_length);
+
 				if (_drag_buffer_fail) {
 					ECL_ERR("EKF drag buffer allocation failed");
 					return;
@@ -117,10 +111,10 @@ void EstimatorInterface::setIMUData(uint64_t time_usec, uint64_t delta_ang_dt, u
 
 			_drag_sample_count ++;
 			// note acceleration is accumulated as a delta velocity
-			_drag_down_sampled.accelXY(0) += imu_sample_new.delta_vel(0);
-			_drag_down_sampled.accelXY(1) += imu_sample_new.delta_vel(1);
-			_drag_down_sampled.time_us += imu_sample_new.time_us;
-			_drag_sample_time_dt += imu_sample_new.delta_vel_dt;
+			_drag_down_sampled.accelXY(0) += imu_sample.delta_vel(0);
+			_drag_down_sampled.accelXY(1) += imu_sample.delta_vel(1);
+			_drag_down_sampled.time_us += imu_sample.time_us;
+			_drag_sample_time_dt += imu_sample.delta_vel_dt;
 
 			// calculate the downsample ratio for drag specific force data
 			uint8_t min_sample_ratio = (uint8_t) ceilf((float)_imu_buffer_length / _obs_buffer_length);
@@ -144,14 +138,24 @@ void EstimatorInterface::setIMUData(uint64_t time_usec, uint64_t delta_ang_dt, u
 				_drag_down_sampled.accelXY.zero();
 				_drag_down_sampled.time_us = 0;
 				_drag_sample_time_dt = 0.0f;
-
 			}
 		}
-
-	} else {
-		_imu_updated = false;
-
 	}
+}
+
+void EstimatorInterface::setIMUData(uint64_t time_usec, uint64_t delta_ang_dt, uint64_t delta_vel_dt,
+				    float (&delta_ang)[3], float (&delta_vel)[3])
+{
+	imuSample imu_sample_new;
+	imu_sample_new.delta_ang = Vector3f(delta_ang);
+	imu_sample_new.delta_vel = Vector3f(delta_vel);
+
+	// convert time from us to secs
+	imu_sample_new.delta_ang_dt = delta_ang_dt / 1e6f;
+	imu_sample_new.delta_vel_dt = delta_vel_dt / 1e6f;
+	imu_sample_new.time_us = time_usec;
+
+	setIMUData(imu_sample_new);
 }
 
 void EstimatorInterface::setMagData(uint64_t time_usec, float (&data)[3])
@@ -164,6 +168,7 @@ void EstimatorInterface::setMagData(uint64_t time_usec, float (&data)[3])
 	// Do not retry if allocation has failed previously
 	if (_mag_buffer.get_length() < _obs_buffer_length) {
 		_mag_buffer_fail = !_mag_buffer.allocate(_obs_buffer_length);
+
 		if (_mag_buffer_fail) {
 			ECL_ERR("EKF mag buffer allocation failed");
 			return;
@@ -195,6 +200,7 @@ void EstimatorInterface::setGpsData(uint64_t time_usec, struct gps_message *gps)
 	// Do not retry if allocation has failed previously
 	if (_gps_buffer.get_length() < _obs_buffer_length) {
 		_gps_buffer_fail = !_gps_buffer.allocate(_obs_buffer_length);
+
 		if (_gps_buffer_fail) {
 			ECL_ERR("EKF GPS buffer allocation failed");
 			return;
@@ -220,6 +226,13 @@ void EstimatorInterface::setGpsData(uint64_t time_usec, struct gps_message *gps)
 		gps_sample_new.vacc = gps->epv;
 
 		gps_sample_new.hgt = (float)gps->alt * 1e-3f;
+
+		gps_sample_new.yaw = gps->yaw;
+		if (ISFINITE(gps->yaw_offset)) {
+			_gps_yaw_offset = gps->yaw_offset;
+		} else {
+			_gps_yaw_offset = 0.0f;
+		}
 
 		// Only calculate the relative position if the WGS-84 location of the origin is set
 		if (collect_gps(time_usec, gps)) {
@@ -248,6 +261,7 @@ void EstimatorInterface::setBaroData(uint64_t time_usec, float data)
 	// Do not retry if allocation has failed previously
 	if (_baro_buffer.get_length() < _obs_buffer_length) {
 		_baro_buffer_fail = !_baro_buffer.allocate(_obs_buffer_length);
+
 		if (_baro_buffer_fail) {
 			ECL_ERR("EKF baro buffer allocation failed");
 			return;
@@ -280,6 +294,7 @@ void EstimatorInterface::setAirspeedData(uint64_t time_usec, float true_airspeed
 	// Do not retry if allocation has failed previously
 	if (_airspeed_buffer.get_length() < _obs_buffer_length) {
 		_airspeed_buffer_fail = !_airspeed_buffer.allocate(_obs_buffer_length);
+
 		if (_airspeed_buffer_fail) {
 			ECL_ERR("EKF airspeed buffer allocation failed");
 			return;
@@ -309,6 +324,7 @@ void EstimatorInterface::setRangeData(uint64_t time_usec, float data)
 	// Do not retry if allocation has failed previously
 	if (_range_buffer.get_length() < _obs_buffer_length) {
 		_range_buffer_fail = !_range_buffer.allocate(_obs_buffer_length);
+
 		if (_range_buffer_fail) {
 			ECL_ERR("EKF range finder buffer allocation failed");
 			return;
@@ -335,8 +351,9 @@ void EstimatorInterface::setOpticalFlowData(uint64_t time_usec, flow_message *fl
 
 	// Allocate the required buffer size if not previously done
 	// Do not retry if allocation has failed previously
-	if (_flow_buffer.get_length() < _obs_buffer_length) {
-		_flow_buffer_fail = !_flow_buffer.allocate(_obs_buffer_length);
+	if (_flow_buffer.get_length() < _imu_buffer_length) {
+		_flow_buffer_fail = !_flow_buffer.allocate(_imu_buffer_length);
+
 		if (_flow_buffer_fail) {
 			ECL_ERR("EKF optical flow buffer allocation failed");
 			return;
@@ -350,6 +367,7 @@ void EstimatorInterface::setOpticalFlowData(uint64_t time_usec, flow_message *fl
 		float delta_time = 1e-6f * (float)flow->dt;
 		float delta_time_min = 5e-7f * (float)_min_obs_interval_us;
 		bool delta_time_good = delta_time >= delta_time_min;
+
 		if (!delta_time_good) {
 			// protect against overflow casued by division with very small delta_time
 			delta_time = delta_time_min;
@@ -357,44 +375,35 @@ void EstimatorInterface::setOpticalFlowData(uint64_t time_usec, flow_message *fl
 
 
 		// check magnitude is within sensor limits
+		// use this to prevent use of a saturated flow sensor when there are other aiding sources available
 		float flow_rate_magnitude;
 		bool flow_magnitude_good = true;
-
 		if (delta_time_good) {
 			flow_rate_magnitude = flow->flowdata.norm() / delta_time;
-			flow_magnitude_good = (flow_rate_magnitude <= _params.flow_rate_max);
+			flow_magnitude_good = (flow_rate_magnitude <= _flow_max_rate);
 		}
+
+		bool relying_on_flow = !_control_status.flags.gps && !_control_status.flags.ev_pos;
 
 		// check quality metric
 		bool flow_quality_good = (flow->quality >= _params.flow_qual_min);
 
-		// Always use data when on ground to allow for bad quality due to unfocussed sensors and operator handling
-		// If flow quality fails checks on ground, assume zero flow rate after body rate compensation
-		if ((delta_time_good && flow_quality_good && flow_magnitude_good) || !_control_status.flags.in_air) {
+		// Check data validity and write to buffers
+		// Invalid flow data is allowed when on ground and is handled as a special case in controlOpticalFlowFusion()
+		bool use_flow_data_to_navigate = delta_time_good && flow_quality_good && (flow_magnitude_good || relying_on_flow);
+		if (use_flow_data_to_navigate || (!_control_status.flags.in_air && relying_on_flow)) {
 			flowSample optflow_sample_new;
-			// calculate the system time-stamp for the mid point of the integration period
-			optflow_sample_new.time_us = time_usec - _params.flow_delay_ms * 1000 - flow->dt / 2;
+			// calculate the system time-stamp for the trailing edge of the flow data integration period
+			optflow_sample_new.time_us = time_usec - _params.flow_delay_ms * 1000;
 
 			// copy the quality metric returned by the PX4Flow sensor
 			optflow_sample_new.quality = flow->quality;
 
-			// NOTE: the EKF uses the reverse sign convention to the flow sensor. EKF assumes positive LOS rate is produced by a RH rotation of the image about the sensor axis.
 			// copy the optical and gyro measured delta angles
+			// NOTE: the EKF uses the reverse sign convention to the flow sensor. EKF assumes positive LOS rate
+			// is produced by a RH rotation of the image about the sensor axis.
 			optflow_sample_new.gyroXYZ = - flow->gyrodata;
-
-			if (flow_quality_good) {
-				optflow_sample_new.flowRadXY = - flow->flowdata;
-
-			} else {
-				// when on the ground with poor flow quality, assume zero ground relative velocity
-				optflow_sample_new.flowRadXY(0) = - flow->gyrodata(0);
-				optflow_sample_new.flowRadXY(1) = - flow->gyrodata(1);
-
-			}
-
-			// compensate for body motion to give a LOS rate
-			optflow_sample_new.flowRadXYcomp(0) = optflow_sample_new.flowRadXY(0) - optflow_sample_new.gyroXYZ(0);
-			optflow_sample_new.flowRadXYcomp(1) = optflow_sample_new.flowRadXY(1) - optflow_sample_new.gyroXYZ(1);
+			optflow_sample_new.flowRadXY = -flow->flowdata;
 
 			// convert integration interval to seconds
 			optflow_sample_new.dt = delta_time;
@@ -416,6 +425,7 @@ void EstimatorInterface::setExtVisionData(uint64_t time_usec, ext_vision_message
 	// Do not retry if allocation has failed previously
 	if (_ext_vision_buffer.get_length() < _obs_buffer_length) {
 		_ev_buffer_fail = !_ext_vision_buffer.allocate(_obs_buffer_length);
+
 		if (_ev_buffer_fail) {
 			ECL_ERR("EKF external vision buffer allocation failed");
 			return;
@@ -431,6 +441,7 @@ void EstimatorInterface::setExtVisionData(uint64_t time_usec, ext_vision_message
 		// copy required data
 		ev_sample_new.angErr = evdata->angErr;
 		ev_sample_new.posErr = evdata->posErr;
+		ev_sample_new.hgtErr = evdata->hgtErr;
 		ev_sample_new.quat = evdata->quat;
 		ev_sample_new.posNED = evdata->posNED;
 
@@ -452,6 +463,7 @@ void EstimatorInterface::setAuxVelData(uint64_t time_usec, float (&data)[2], flo
 	// Do not retry if allocation has failed previously
 	if (_auxvel_buffer.get_length() < _obs_buffer_length) {
 		_auxvel_buffer_fail = !_auxvel_buffer.allocate(_obs_buffer_length);
+
 		if (_auxvel_buffer_fail) {
 			ECL_ERR("EKF aux vel buffer allocation failed");
 			return;
@@ -515,8 +527,6 @@ bool EstimatorInterface::initialise_interface(uint64_t timestamp)
 	_imu_sample_delayed.delta_vel_dt = 0.0f;
 	_imu_sample_delayed.time_us = timestamp;
 
-	_imu_ticks = 0;
-
 	_initialised = false;
 
 	_time_last_imu = 0;
@@ -554,7 +564,8 @@ bool EstimatorInterface::local_position_is_valid()
 	return !_deadreckon_time_exceeded;
 }
 
-void EstimatorInterface::print_status() {
+void EstimatorInterface::print_status()
+{
 	ECL_INFO("local position valid: %s", local_position_is_valid() ? "yes" : "no");
 	ECL_INFO("global position valid: %s", global_position_is_valid() ? "yes" : "no");
 

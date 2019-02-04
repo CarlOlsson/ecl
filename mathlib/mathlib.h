@@ -32,45 +32,39 @@
  ****************************************************************************/
 
 /**
- * @file mathlib.cpp
+ * @file mathlib.h
  *
- * Definition of math namespace function for POSIX SHARED
+ * Target specific math functions and definitions
  *
  * @author Siddharth Bharat Purohit <siddharthbharatpurohit@gmail.com>
  */
-#include "mathlib.h"
+#ifndef MATHLIB_H
+#define MATHLIB_H
 
-#ifdef POSIX_SHARED
+#ifdef ECL_STANDALONE
 
+#ifndef M_PI_F
+#define M_PI_F 3.14159265358979323846f
+#endif
+
+#ifndef M_PI_2_F
+#define M_PI_2_F (M_PI / 2.0f)
+#endif
 
 namespace math
 {
+// using namespace Eigen;
 
-float min(float val1, float val2)
-{
-	return (val1 < val2) ? val1 : val2;
-}
-
-float max(float val1, float val2)
-{
-	return (val1 > val2) ? val1 : val2;
-}
-
-float constrain(float val, float min, float max)
-{
-	return (val < min) ? min : ((val > max) ? max : val);
-}
-
-float radians(float degrees)
-{
-	return (degrees / 180.0f) * M_PI_F;
-}
-
-float degrees(float radians)
-{
-	return (radians * 180.0f) / M_PI_F;
-}
+float min(float val1, float val2);
+float max(float val1, float val2);
+float constrain(float val, float min, float max);
+float radians(float degrees);
+float degrees(float radians);
 
 }
+#else
 
-#endif
+#include <mathlib/mathlib.h>
+
+#endif //ECL_STANDALONE
+#endif //MATHLIB_H

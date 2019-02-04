@@ -39,11 +39,15 @@
  *
  */
 
-#include <matrix/matrix/math.hpp>
-#include "RingBuffer.h"
-#include "geo.h"
+#pragma once
+
 #include "common.h"
-#include "mathlib.h"
+#include "RingBuffer.h"
+
+#include <ecl.h>
+#include <geo/geo.h>
+#include <matrix/math.hpp>
+#include <mathlib/mathlib.h>
 
 using namespace estimator;
 
@@ -138,6 +142,16 @@ public:
 	*/
 	virtual void get_imu_vibe_metrics(float vibe[3]) = 0;
 
+	/*
+	First argument returns GPS drift  metrics in the following array locations
+	0 : Horizontal position drift rate (m/s)
+	1 : Vertical position drift rate (m/s)
+	2 : Filtered horizontal velocity (m/s)
+	Second argument returns true when IMU movement is blocking the drift calculation
+	Function returns true if the metrics have been updated and not returned previously by this function
+	*/
+	virtual bool get_gps_drift_metrics(float drift[3], bool *blocked) = 0;
+
 	// get the ekf WGS-84 origin position and height and the system time it was last set
 	// return true if the origin is valid
 	virtual bool get_ekf_origin(uint64_t *origin_time, map_projection_reference_s *origin_pos, float *origin_alt) = 0;
@@ -151,20 +165,19 @@ public:
 	// get the 1-sigma horizontal and vertical velocity uncertainty
 	virtual void get_ekf_vel_accuracy(float *ekf_evh, float *ekf_evv) = 0;
 
-	/*
-	Returns the following vehicle control limits required by the estimator.
-	vxy_max : Maximum ground relative horizontal speed (metres/sec). NaN when no limiting required.
-	limit_hagl : Boolean true when height above ground needs to be controlled to remain between optical flow focus and rang efinder max range limits.
-	*/
-	virtual void get_ekf_ctrl_limits(float *vxy_max, bool *limit_hagl) = 0;
+	// get the vehicle control limits required by the estimator to keep within sensor limitations
+	virtual void get_ekf_ctrl_limits(float *vxy_max, float *vz_max, float *hagl_min, float *hagl_max) = 0;
 
 	// ask estimator for sensor data collection decision and do any preprocessing if required, returns true if not defined
 	virtual bool collect_gps(uint64_t time_usec, struct gps_message *gps) { return true; }
 
 	// accumulate and downsample IMU data to the EKF prediction rate
-	virtual bool collect_imu(imuSample &imu) { return true; }
+	virtual bool collect_imu(const imuSample &imu) = 0;
 
 	// set delta angle imu data
+	void setIMUData(const imuSample &imu_sample);
+
+	// legacy interface for compatibility (2018-09-14)
 	void setIMUData(uint64_t time_usec, uint64_t delta_ang_dt, uint64_t delta_vel_dt, float (&delta_ang)[3], float (&delta_vel)[3]);
 
 	// set magnetometer data
@@ -183,6 +196,7 @@ public:
 	void setRangeData(uint64_t time_usec, float data);
 
 	// set optical flow data
+	// if optical flow sensor gyro delta angles are not available, set gyroXYZ vector fields to NaN and the EKF will use its internal delta angle data instead
 	void setOpticalFlowData(uint64_t time_usec, flow_message *flow);
 
 	// set external vision position and attitude data
@@ -204,6 +218,9 @@ public:
 	Returns true if reset performed, false if rejected due to less than 10 seconds lapsed since last reset.
 	*/
 	virtual bool reset_imu_bias() = 0;
+
+	// return true if the attitude is usable
+	bool attitude_valid() { return ISFINITE(_output_new.quat_nominal(0)) && _control_status.flags.tilt_align; }
 
 	// get vehicle landed status data
 	bool get_in_air_status() {return _control_status.flags.in_air;}
@@ -232,6 +249,21 @@ public:
 	// set air density used by the multi-rotor specific drag force fusion
 	void set_air_density(float air_density) {_air_density = air_density;}
 
+	// set sensor limitations reported by the rangefinder
+	void set_rangefinder_limits(float min_distance, float max_distance)
+	{
+		_rng_valid_min_val = min_distance;
+		_rng_valid_max_val = max_distance;
+	}
+
+	// set sensor limitations reported by the optical flow sensor
+	void set_optical_flow_limits(float max_flow_rate, float min_distance, float max_distance)
+	{
+		_flow_max_rate = max_flow_rate;
+		_flow_min_distance = min_distance;
+		_flow_max_distance = max_distance;
+	}
+
 	// return true if the global position estimate is valid
 	virtual bool global_position_is_valid() = 0;
 
@@ -244,6 +276,9 @@ public:
 	// get the estimated terrain vertical position relative to the NED origin
 	virtual void get_terrain_vert_pos(float *ret) = 0;
 
+	// get the terrain variance
+	virtual void get_terrain_var(float *ret) = 0;
+
 	// return true if the local position estimate is valid
 	bool local_position_is_valid();
 
@@ -254,6 +289,8 @@ public:
 		}
 	}
 
+	const matrix::Quatf &get_quaternion() const { return _output_new.quat_nominal; }
+
 	// return the quaternion defining the rotation from the EKF to the External Vision reference frame
 	virtual void get_ekf2ev_quaternion(float *quat) = 0;
 
@@ -261,6 +298,7 @@ public:
 	void get_velocity(float *vel)
 	{
 		Vector3f vel_earth = _output_new.vel - _vel_imu_rel_body_ned;
+
 		for (unsigned i = 0; i < 3; i++) {
 			vel[i] = vel_earth(i);
 		}
@@ -297,7 +335,7 @@ public:
 		*time_us = _time_last_imu;
 	}
 
-	// WINGTRA: Get the value of magnetic declination in degrees to be saved for use at the next startup
+	// Get the value of magnetic declination in degrees to be saved for use at the next startup
 	// Returns true when the declination can be saved
 	// At the next startup, set param.mag_declination_deg to the value saved
 	bool get_mag_decl_deg(float *val)
@@ -351,15 +389,10 @@ public:
 
 	virtual void get_R_rng_to_earth_2_2(float *ret) = 0;	// WINGTRA
 
-	virtual void get_terrain_var(float *ret) = 0;	// WINGTRA
-
 	virtual bool vel_is_rejected() = 0; // WINGTRA: return true if velocity test ratio is > 1
 
 	// Getter for the average imu update period in s
-	float get_dt_imu_avg()
-	{
-		return _dt_imu_avg;
-	}
+	float get_dt_imu_avg() const { return _dt_imu_avg; }
 
 	// Getter for the imu sample on the delayed time horizon
 	imuSample get_imu_sample_delayed()
@@ -373,15 +406,10 @@ public:
 		return _baro_sample_delayed;
 	}
 
-	// Getter for a flag indicating if the ekf should update (completed downsampling process)
-	bool get_imu_updated()
-	{
-		return _imu_updated;
-	}
-
 	void print_status();
 
-	static const unsigned FILTER_UPDATE_PERIOD_MS = 8;	// ekf prediction period in milliseconds - this should ideally be an integer multiple of the IMU time delta
+	static constexpr unsigned FILTER_UPDATE_PERIOD_MS{8};	// ekf prediction period in milliseconds - this should ideally be an integer multiple of the IMU time delta
+	static constexpr float FILTER_UPDATE_PERIOD_S{FILTER_UPDATE_PERIOD_MS * 0.001f};
 
 protected:
 
@@ -391,7 +419,7 @@ protected:
 	 OBS_BUFFER_LENGTH defines how many observations (non-IMU measurements) we can buffer
 	 which sets the maximum frequency at which we can process non-IMU measurements. Measurements that
 	 arrive too soon after the previous measurement will not be processed.
-	 max freq (Hz) = (OBS_BUFFER_LENGTH - 1) / (IMU_BUFFER_LENGTH * FILTER_UPDATE_PERIOD_MS * 0.001)
+	 max freq (Hz) = (OBS_BUFFER_LENGTH - 1) / (IMU_BUFFER_LENGTH * FILTER_UPDATE_PERIOD_S)
 	 This can be adjusted to match the max sensor data rate plus some margin for jitter.
 	*/
 	uint8_t _obs_buffer_length{0};
@@ -425,7 +453,14 @@ protected:
 	// Used by the multi-rotor specific drag force fusion
 	uint8_t _drag_sample_count{0};	// number of drag specific force samples assumulated at the filter prediction rate
 	float _drag_sample_time_dt{0.0f};	// time integral across all samples used to form _drag_down_sampled (sec)
-	float _air_density{1.225f};		// air density (kg/m**3)
+	float _air_density{CONSTANTS_AIR_DENSITY_SEA_LEVEL_15C};		// air density (kg/m**3)
+
+	// Sensor limitations
+	float _rng_valid_min_val{0.0f};	///< minimum distance that the rangefinder can measure (m)
+	float _rng_valid_max_val{0.0f};	///< maximum distance that the rangefinder can measure (m)
+	float _flow_max_rate{0.0f}; ///< maximum angular flow rate that the optical flow sensor can measure (rad/s)
+	float _flow_min_distance{0.0f};	///< minimum distance that the optical flow sensor can operate at (m)
+	float _flow_max_distance{0.0f};	///< maximum distance that the optical flow sensor can operate at (m)
 
 	// Output Predictor
 	outputSample _output_sample_delayed{};	// filter output on the delayed time horizon
@@ -437,8 +472,6 @@ protected:
 	Vector3f _vel_imu_rel_body_ned;		// velocity of IMU relative to body origin in NED earth frame
 	Vector3f _vel_deriv_ned;		// velocity derivative at the IMU in NED earth frame (m/s/s)
 
-	uint64_t _imu_ticks{0};	// counter for imu updates
-
 	bool _imu_updated{false};      // true if the ekf should update (completed downsampling process)
 	bool _initialised{false};      // true if the ekf interface instance (data buffering) is initialized
 
@@ -449,6 +482,7 @@ protected:
 	struct map_projection_reference_s _pos_ref {};   // Contains WGS-84 position latitude and longitude (radians) of the EKF origin
 	struct map_projection_reference_s _gps_pos_prev {};   // Contains WGS-84 position latitude and longitude (radians) of the previous GPS message
 	float _gps_alt_prev{0.0f};	// height from the previous GPS message (m)
+	float _gps_yaw_offset{0.0f};	// Yaw offset angle for dual GPS antennas used for yaw estimation (radians).
 
 	// innovation consistency check monitoring ratios
 	float _yaw_test_ratio{0.0f};          // yaw innovation consistency check ratio
@@ -464,13 +498,20 @@ protected:
 	bool _deadreckon_time_exceeded{false};	// true if the horizontal nav solution has been deadreckoning for too long and is invalid
 	bool _is_wind_dead_reckoning{false};	// true if we are navigating reliant on wind relative measurements
 
-	// IMU vibration monitoring
+	// IMU vibration and movement monitoring
 	Vector3f _delta_ang_prev;	// delta angle from the previous IMU measurement
 	Vector3f _delta_vel_prev;	// delta velocity from the previous IMU measurement
 	float _vibe_metrics[3] {};	// IMU vibration metrics
 					// [0] Level of coning vibration in the IMU delta angles (rad^2)
 					// [1] high frequency vibraton level in the IMU delta angle data (rad)
 					// [2] high frequency vibration level in the IMU delta velocity data (m/s)
+	float _gps_drift_metrics[3] {};	// Array containing GPS drift metrics
+					// [0] Horizontal position drift rate (m/s)
+					// [1] Vertical position drift rate (m/s)
+					// [2] Filtered horizontal velocity (m/s)
+	bool _vehicle_at_rest{false};	// true when the vehicle is at rest
+	uint64_t _time_last_move_detect_us{0};	// timestamp of last movement detection event in microseconds
+	bool _gps_drift_updated{false};	// true when _gps_drift_metrics has been updated and is ready for retrieval
 
 	// data buffer instances
 	RingBuffer<imuSample> _imu_buffer;

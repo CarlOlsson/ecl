@@ -1,5 +1,5 @@
 // SWIG Wrapper for the ecl's EKF
-%module(directors="1") ecl
+%module(directors="1") ecl_EKF
 %feature("autodoc", "3");
 
 %include "inttypes.i"
@@ -11,8 +11,8 @@
 %{
     #define SWIG_FILE_WITH_INIT
     #include <iostream>
-    #include "../EKF/ekf.h"
-    #include "../EKF/geo.h"
+    #include <EKF/ekf.h>
+    #include <geo/geo.h>
 %}
 
 %include "numpy.i"
@@ -74,7 +74,7 @@
         bool bad_mag_x;	// 0 - true if the fusion of the magnetometer X-axis has encountered a numerical error
         bool bad_mag_y;	// 1 - true if the fusion of the magnetometer Y-axis has encountered a numerical error
         bool bad_mag_z;	// 2 - true if the fusion of the magnetometer Z-axis has encountered a numerical error
-        bool bad_mag_hdg;	// 3 - true if the fusion of the magnetic heading has encountered a numerical error
+	bool bad_hdg;	// 3 - true if the fusion of the heading angle has encountered a numerical error
         bool bad_mag_decl;	// 4 - true if the fusion of the magnetic declination has encountered a numerical error
         bool bad_airspeed;	// 5 - true if fusion of the airspeed has encountered a numerical error
         bool bad_sideslip;	// 6 - true if fusion of the synthetic sideslip constraint has encountered a numerical error
@@ -92,7 +92,7 @@
             ss << "[bad_mag_x: " << bad_mag_x << "\n";
             ss << " bad_mag_y: " << bad_mag_y << "\n";
             ss << " bad_mag_z: " << bad_mag_z << "\n";
-            ss << " bad_mag_hdg: " << bad_mag_hdg << "\n";
+	    ss << " bad_hdg: " << bad_hdg << "\n";
             ss << " bad_mag_decl: " << bad_mag_decl << "\n";
             ss << " bad_airspeed: " << bad_airspeed << "\n";
             ss << " bad_sideslip: " << bad_sideslip << "\n";
@@ -142,16 +142,16 @@
 }
 
 // Tell swig to wrap ecl classes
-%include "../matrix/matrix/Vector3.hpp"
-%include "../matrix/matrix/Vector2.hpp"
-%include "../matrix/matrix/Quaternion.hpp"
-%include "../matrix/matrix/Dcm.hpp"
-%include "../matrix/matrix/Euler.hpp"
-%include "../matrix/matrix/SquareMatrix.hpp"
-%include "../matrix/matrix/helper_functions.hpp"
-%include "../EKF/common.h"
-%include "../EKF/estimator_interface.h"
-%include "../EKF/ekf.h"
+%include <matrix/Vector3.hpp>
+%include <matrix/Vector2.hpp>
+%include <matrix/Quaternion.hpp>
+%include <matrix/Dcm.hpp>
+%include <matrix/Euler.hpp>
+%include <matrix/SquareMatrix.hpp>
+%include <matrix/helper_functions.hpp>
+%include <EKF/common.h>
+%include <EKF/estimator_interface.h>
+%include <EKF/ekf.h>
 
 %extend Ekf {
     void set_imu_data(uint64_t time_usec, uint64_t delta_ang_dt, uint64_t delta_vel_dt,  float delta_ang[3], float delta_vel[3]) {
@@ -209,7 +209,7 @@
         result.bad_mag_x = result_union.flags.bad_mag_x;
         result.bad_mag_y = result_union.flags.bad_mag_y;
         result.bad_mag_z = result_union.flags.bad_mag_z;
-        result.bad_mag_hdg = result_union.flags.bad_mag_hdg;
+	result.bad_hdg = result_union.flags.bad_hdg;
         result.bad_mag_decl = result_union.flags.bad_mag_decl;
         result.bad_airspeed = result_union.flags.bad_airspeed;
         result.bad_sideslip = result_union.flags.bad_sideslip;

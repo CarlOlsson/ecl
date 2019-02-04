@@ -65,6 +65,7 @@ set(SRCS
 	estimator_interface.cpp
 	geo.cpp
 	gps_checks.cpp
+	gps_yaw_fusion.cpp
 	mag_fusion.cpp
 	mathlib.cpp
 	optflow_fusion.cpp
