@@ -40,10 +40,11 @@
  *
  */
 
-#include "../ecl.h"
 #include "ekf.h"
+
+#include <ecl.h>
 #include <math.h>
-#include "mathlib.h"
+#include <mathlib/mathlib.h>
 
 void Ekf::initialiseCovariance()
 {
@@ -54,7 +55,7 @@ void Ekf::initialiseCovariance()
 	}
 
 	// calculate average prediction time step in sec
-	float dt = 0.001f * (float)FILTER_UPDATE_PERIOD_MS;
+	float dt = FILTER_UPDATE_PERIOD_S;
 
 	// define the initial angle uncertainty as variances for a rotation vector
 	Vector3f rot_vec_var;
@@ -71,12 +72,15 @@ void Ekf::initialiseCovariance()
 	// position
 	P[7][7] = sq(fmaxf(_params.gps_pos_noise, 0.01f));
 	P[8][8] = P[7][7];
+
 	if (_control_status.flags.rng_hgt) {
 		P[9][9] = sq(fmaxf(_params.range_noise, 0.01f));
+
 	} else if (_control_status.flags.gps_hgt) {
 		float lower_limit = fmaxf(_params.gps_pos_noise, 0.01f);
 		float upper_limit = fmaxf(_params.pos_noaid_noise, lower_limit);
 		P[9][9] = sq(1.5f * math::constrain(_gps_sample_delayed.vacc, lower_limit, upper_limit));
+
 	} else {
 		P[9][9] = sq(fmaxf(_params.baro_noise, 0.01f));
 	}
@@ -101,6 +105,9 @@ void Ekf::initialiseCovariance()
 	for (uint8_t index = 16; index <= 21; index ++) {
 		P[index][index] = sq(_params.mag_noise);
 	}
+
+	// save covariance data for re-use when auto-switching between heading and 3-axis fusion
+	save_mag_cov_data();
 
 	// wind
 	P[22][22] = sq(_params.initial_wind_uncertainty);
@@ -146,7 +153,8 @@ void Ekf::predictCovariance()
 	float dvy_b = _state.accel_bias(1);
 	float dvz_b = _state.accel_bias(2);
 
-	float dt = math::constrain(_imu_sample_delayed.delta_ang_dt, 0.0005f * FILTER_UPDATE_PERIOD_MS, 0.002f * FILTER_UPDATE_PERIOD_MS);
+	float dt = math::constrain(_imu_sample_delayed.delta_ang_dt, 0.5f * FILTER_UPDATE_PERIOD_S, 2.0f * FILTER_UPDATE_PERIOD_S);
+	float dt_inv = 1.0f / dt;
 
 	// compute noise variance for stationary processes
 	float process_noise[_k_num_states] = {};
@@ -158,36 +166,47 @@ void Ekf::predictCovariance()
 	float d_vel_bias_sig = dt * dt * math::constrain(_params.accel_bias_p_noise, 0.0f, 1.0f);
 
 	// inhibit learning of imu acccel bias if the manoeuvre levels are too high to protect against the effect of sensor nonlinearities or bad accel data is detected
-	float alpha = 1.0f - math::constrain((dt / _params.acc_bias_learn_tc), 0.0f, 1.0f);
-	_ang_rate_mag_filt = fmaxf(_imu_sample_delayed.delta_ang.norm(), alpha * _ang_rate_mag_filt);
-	_accel_mag_filt = fmaxf(_imu_sample_delayed.delta_vel.norm(), alpha * _accel_mag_filt);
-	if (_ang_rate_mag_filt > dt * _params.acc_bias_learn_gyr_lim
-			|| _accel_mag_filt > dt * _params.acc_bias_learn_acc_lim
-			|| _bad_vert_accel_detected) {
+	float alpha = math::constrain((dt / _params.acc_bias_learn_tc), 0.0f, 1.0f);
+	float beta = 1.0f - alpha;
+	_ang_rate_mag_filt = fmaxf(dt_inv * _imu_sample_delayed.delta_ang.norm(), beta * _ang_rate_mag_filt);
+	_accel_mag_filt = fmaxf(dt_inv * _imu_sample_delayed.delta_vel.norm(), beta * _accel_mag_filt);
+	_accel_vec_filt(0) = alpha * dt_inv * _imu_sample_delayed.delta_vel(0) + beta * _accel_vec_filt(0);
+	_accel_vec_filt(1) = alpha * dt_inv * _imu_sample_delayed.delta_vel(1) + beta * _accel_vec_filt(1);
+	_accel_vec_filt(2) = alpha * dt_inv * _imu_sample_delayed.delta_vel(2) + beta * _accel_vec_filt(2);
+
+	if (_ang_rate_mag_filt > _params.acc_bias_learn_gyr_lim
+	    || _accel_mag_filt > _params.acc_bias_learn_acc_lim
+	    || _bad_vert_accel_detected) {
+
 		// store the bias state variances to be reinstated later
 		if (!_accel_bias_inhibit) {
 			_prev_dvel_bias_var(0) = P[13][13];
 			_prev_dvel_bias_var(1) = P[14][14];
 			_prev_dvel_bias_var(2) = P[15][15];
 		}
+
 		_accel_bias_inhibit = true;
+
 	} else {
 		if (_accel_bias_inhibit) {
 			// reinstate the bias state variances
 			P[13][13] = _prev_dvel_bias_var(0);
 			P[14][14] = _prev_dvel_bias_var(1);
 			P[15][15] = _prev_dvel_bias_var(2);
+
 		} else {
 			// store the bias state variances to be reinstated later
 			_prev_dvel_bias_var(0) = P[13][13];
 			_prev_dvel_bias_var(1) = P[14][14];
 			_prev_dvel_bias_var(2) = P[15][15];
 		}
+
 		_accel_bias_inhibit = false;
 	}
 
 	// Don't continue to grow the earth field variances if they are becoming too large or we are not doing 3-axis fusion as this can make the covariance matrix badly conditioned
 	float mag_I_sig;
+
 	if (_control_status.flags.mag_3D && (P[16][16] + P[17][17] + P[18][18]) < 0.1f) {
 		mag_I_sig = dt * math::constrain(_params.mage_p_noise, 0.0f, 1.0f);
 
@@ -197,6 +216,7 @@ void Ekf::predictCovariance()
 
 	// Don't continue to grow the body field variances if they is becoming too large or we are not doing 3-axis fusion as this can make the covariance matrix badly conditioned
 	float mag_B_sig;
+
 	if (_control_status.flags.mag_3D && (P[19][19] + P[20][20] + P[21][21]) < 0.1f) {
 		mag_B_sig = dt * math::constrain(_params.magb_p_noise, 0.0f, 1.0f);
 
@@ -206,14 +226,13 @@ void Ekf::predictCovariance()
 
 	float wind_vel_sig;
 
-	// WINGTRA: Calculate low pass filtered height rate
+	// Calculate low pass filtered height rate
 	float alpha_height_rate_lpf = 0.1f * dt; // 10 seconds time constant
 	_height_rate_lpf = _height_rate_lpf * (1.0f - alpha_height_rate_lpf) + _state.vel(2) * alpha_height_rate_lpf;
-	// WINGTRA: End
 
 	// Don't continue to grow wind velocity state variances if they are becoming too large or we are not using wind velocity states as this can make the covariance matrix badly conditioned
 	if (_control_status.flags.wind && (P[22][22] + P[23][23]) < sq(_params.initial_wind_uncertainty)) {
-		wind_vel_sig = dt * math::constrain(_params.wind_vel_p_noise, 0.0f, 1.0f) * (1.0f + _params.wind_vel_p_noise_scaler * fabsf(_height_rate_lpf)); // WINGTRA: Add scaling with vertical vel
+		wind_vel_sig = dt * math::constrain(_params.wind_vel_p_noise, 0.0f, 1.0f) * (1.0f + _params.wind_vel_p_noise_scaler * fabsf(_height_rate_lpf));
 
 	} else {
 		wind_vel_sig = 0.0f;
@@ -224,6 +243,7 @@ void Ekf::predictCovariance()
 	for (unsigned i = 0; i <= 9; i++) {
 		process_noise[i] = 0.0f;
 	}
+
 	// delta angle bias states
 	process_noise[12] = process_noise[11] = process_noise[10] = sq(d_ang_bias_sig);
 	// delta_velocity bias states
@@ -242,11 +262,13 @@ void Ekf::predictCovariance()
 	float gyro_noise = math::constrain(_params.gyro_noise, 0.0f, 1.0f);
 	daxVar = dayVar = dazVar = sq(dt * gyro_noise);
 	float accel_noise = math::constrain(_params.accel_noise, 0.0f, 1.0f);
+
 	if (_bad_vert_accel_detected) {
 		// Increase accelerometer process noise if bad accel data is detected. Measurement errors due to
 		// vibration induced clipping commonly reach an equivalent 0.5g offset.
 		accel_noise = BADACC_BIAS_PNOISE;
 	}
+
 	dvxVar = dvyVar = dvzVar = sq(dt * accel_noise);
 
 	// predict the covariance
@@ -469,8 +491,8 @@ void Ekf::predictCovariance()
 
 	} else {
 		// Inhibit delta velocity bias learning by zeroing the covariance terms
-		zeroRows(nextP,13,15);
-		zeroCols(nextP,13,15);
+		zeroRows(nextP, 13, 15);
+		zeroCols(nextP, 13, 15);
 	}
 
 	// Don't do covariance prediction on magnetic field states unless we are using 3-axis fusion
@@ -727,15 +749,16 @@ void Ekf::fixCovarianceErrors()
 	}
 
 	// force symmetry on the quaternion, velocity and positon state covariances
-	makeSymmetrical(P,0,12);
+	makeSymmetrical(P, 0, 12);
 
 	// the following states are optional and are deactivaed when not required
 	// by ensuring the corresponding covariance matrix values are kept at zero
 
 	// accelerometer bias states
 	if ((_params.fusion_mode & MASK_INHIBIT_ACC_BIAS) || _accel_bias_inhibit) {
-		zeroRows(P,13,15);
-		zeroCols(P,13,15);
+		zeroRows(P, 13, 15);
+		zeroCols(P, 13, 15);
+
 	} else {
 		// Find the maximum delta velocity bias state variance and request a covariance reset if any variance is below the safe minimum
 		const float minSafeStateVar = 1e-9f;
@@ -797,6 +820,7 @@ void Ekf::fixCovarianceErrors()
 		if (!bad_acc_bias) {
 			_fault_status.flags.bad_acc_bias = false;
 			_time_acc_bias_check = _time_last_imu;
+
 		} else {
 			_fault_status.flags.bad_acc_bias = true;
 		}
@@ -807,96 +831,106 @@ void Ekf::fixCovarianceErrors()
 			float varX = P[13][13];
 			float varY = P[14][14];
 			float varZ = P[15][15];
-			zeroRows(P,13,15);
-			zeroCols(P,13,15);
+			zeroRows(P, 13, 15);
+			zeroCols(P, 13, 15);
 			P[13][13] = varX;
 			P[14][14] = varY;
 			P[15][15] = varZ;
 			_time_acc_bias_check = _time_last_imu;
 			_fault_status.flags.bad_acc_bias = false;
 			ECL_WARN("EKF invalid accel bias - resetting covariance");
+
 		} else {
 			// ensure the covariance values are symmetrical
-			makeSymmetrical(P,13,15);
+			makeSymmetrical(P, 13, 15);
 		}
 
 	}
 
 	// magnetic field states
 	if (!_control_status.flags.mag_3D) {
-		zeroRows(P,16,21);
-		zeroCols(P,16,21);
+		zeroRows(P, 16, 21);
+		zeroCols(P, 16, 21);
+
 	} else {
 		// constrain variances
 		for (int i = 16; i <= 18; i++) {
 			P[i][i] = math::constrain(P[i][i], 0.0f, P_lim[5]);
 		}
+
 		for (int i = 19; i <= 21; i++) {
 			P[i][i] = math::constrain(P[i][i], 0.0f, P_lim[6]);
 		}
+
 		// force symmetry
-		makeSymmetrical(P,16,21);
+		makeSymmetrical(P, 16, 21);
 	}
 
 	// wind velocity states
 	if (!_control_status.flags.wind) {
-		zeroRows(P,22,23);
-		zeroCols(P,22,23);
+		zeroRows(P, 22, 23);
+		zeroCols(P, 22, 23);
+
 	} else {
 		// constrain variances
 		for (int i = 22; i <= 23; i++) {
 			P[i][i] = math::constrain(P[i][i], 0.0f, P_lim[7]);
 		}
+
 		// force symmetry
-		makeSymmetrical(P,22,23);
+		makeSymmetrical(P, 22, 23);
 	}
 }
 
 void Ekf::resetMagCovariance()
 {
 	// set the quaternion covariance terms to zero
-	zeroRows(P,0,3);
-	zeroCols(P,0,3);
+	zeroRows(P, 0, 3);
+	zeroCols(P, 0, 3);
 
 	// set the magnetic field covariance terms to zero
-	zeroRows(P,16,21);
-	zeroCols(P,16,21);
+	zeroRows(P, 16, 21);
+	zeroCols(P, 16, 21);
+	_mag_decl_cov_reset = false;
 
 	// set the field state variance to the observation variance
-	for (uint8_t rc_index=16; rc_index <= 21; rc_index ++) {
+	for (uint8_t rc_index = 16; rc_index <= 21; rc_index ++) {
 		P[rc_index][rc_index] = sq(_params.mag_noise);
 	}
+
+	// save covariance data for re-use when auto-switching between heading and 3-axis fusion
+	save_mag_cov_data();
 }
 
 void Ekf::resetWindCovariance()
 {
 	// set the wind  covariance terms to zero
-	zeroRows(P,22,23);
-	zeroCols(P,22,23);
+	zeroRows(P, 22, 23);
+	zeroCols(P, 22, 23);
 
 	if (_tas_data_ready && (_imu_sample_delayed.time_us - _airspeed_sample_delayed.time_us < (uint64_t)5e5)) {
 		// Use airspeed and zer sideslip assumption to set initial covariance values for wind states
 
 		// calculate the wind speed and bearing
-		float spd = sqrtf(sq(_state.wind_vel(0))+sq(_state.wind_vel(1)));
-		float yaw = atan2f(_state.wind_vel(1),_state.wind_vel(0));
+		float spd = sqrtf(sq(_state.wind_vel(0)) + sq(_state.wind_vel(1)));
+		float yaw = atan2f(_state.wind_vel(1), _state.wind_vel(0));
 
 		// calculate the uncertainty in wind speed and direction using the uncertainty in airspeed and sideslip angle
 		// used to calculate the initial wind speed
 		float R_spd = sq(math::constrain(_params.eas_noise, 0.5f, 5.0f) * math::constrain(_airspeed_sample_delayed.eas2tas, 0.9f, 10.0f));
-		float R_yaw = sq(0.1745f);
+		float R_yaw = sq(math::radians(10.0f));
 
 		// calculate the variance and covariance terms for the wind states
 		float cos_yaw = cosf(yaw);
 		float sin_yaw = sinf(yaw);
 		float cos_yaw_2 = sq(cos_yaw);
 		float sin_yaw_2 = sq(sin_yaw);
-		float sin_cos_yaw = sin_yaw*cos_yaw;
+		float sin_cos_yaw = sin_yaw * cos_yaw;
 		float spd_2 = sq(spd);
-		P[22][22] = R_yaw*spd_2*sin_yaw_2 + R_spd*cos_yaw_2;
-		P[22][23] = - R_yaw*sin_cos_yaw*spd_2 + R_spd*sin_cos_yaw;
+		P[22][22] = R_yaw * spd_2 * sin_yaw_2 + R_spd * cos_yaw_2;
+		P[22][23] = - R_yaw * sin_cos_yaw * spd_2 + R_spd * sin_cos_yaw;
 		P[23][22] = P[22][23];
-		P[23][23] = R_yaw*spd_2*cos_yaw_2 + R_spd*sin_yaw_2;
+		P[23][23] = R_yaw * spd_2 * cos_yaw_2 + R_spd * sin_yaw_2;
 
 		// Now add the variance due to uncertainty in vehicle velocity that was used to calculate the initial wind speed
 		P[22][22] += P[4][4];

@@ -1,7 +1,6 @@
-#!/bin/sh
 ############################################################################
 #
-#   Copyright (c) 2015-2016 ECL Development Team. All rights reserved.
+#   Copyright (c) 2018 ECL Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -32,23 +31,10 @@
 #
 ############################################################################
 
-# Exit on any error.
-set -e
-
-if [ -z ${RUN_PYTEST} ];
-then
-    # Build EKF shared library.
-    mkdir Build -p
-    cd Build
-    cmake ../EKF
-    make
-    cd ..
-else
-    # Build EKF shared library.
-    mkdir Build -p
-    cd Build
-    cmake -DPythonTests=1 ../EKF
-    make pytest
-    make pytest-benchmark
-    cd ..
-fi
+add_library(ecl_validation
+	data_validator.cpp
+	data_validator_group.cpp
+	)
+add_dependencies(ecl_validation prebuild_targets)
+target_compile_definitions(ecl_validation PRIVATE -DMODULE_NAME="ecl/validation")
+target_include_directories(ecl_validation PUBLIC ${ECL_SOURCE_DIR})

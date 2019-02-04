@@ -49,6 +49,7 @@ px4_add_module(
 		EKF/ekf_helper.cpp
 		EKF/estimator_interface.cpp
 		EKF/gps_checks.cpp
+		EKF/gps_yaw_fusion.cpp
 		EKF/mag_fusion.cpp
 		EKF/optflow_fusion.cpp
 		EKF/sideslip_fusion.cpp

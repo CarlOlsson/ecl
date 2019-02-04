@@ -40,8 +40,9 @@
 #pragma once
 
 #include <mathlib/mathlib.h>
+#include <matrix/math.hpp>
 
-class __EXPORT TECS
+class TECS
 {
 public:
 	TECS() = default;
@@ -72,14 +73,14 @@ public:
 	 * Must be called prior to udating tecs control loops
 	 * Must be called at 50Hz or greater
 	 */
-	void update_vehicle_state_estimates(float airspeed, const math::Matrix<3, 3> &rotMat,
-					    const math::Vector<3> &accel_body, bool altitude_lock, bool in_air,
+	void update_vehicle_state_estimates(float airspeed, const matrix::Dcmf &rotMat,
+					    const matrix::Vector3f &accel_body, bool altitude_lock, bool in_air,
 					    float altitude, bool vz_valid, float vz, float az);
 
 	/**
 	 * Update the control loop calculations
 	 */
-	void update_pitch_throttle(const math::Matrix<3, 3> &rotMat, float pitch, float baro_altitude, float hgt_setpoint,
+	void update_pitch_throttle(const matrix::Dcmf &rotMat, float pitch, float baro_altitude, float hgt_setpoint,
 				   float EAS_setpoint, float indicated_airspeed, float eas_to_tas, bool climb_out_setpoint, float pitch_min_climbout,
 				   float throttle_min, float throttle_setpoint_max, float throttle_cruise,
 				   float pitch_limit_min, float pitch_limit_max);
@@ -265,9 +266,7 @@ private:
 
 	// time steps (non-fixed)
 	float _dt{DT_DEFAULT};						///< Time since last update of main TECS loop (sec)
-	static constexpr float DT_MIN = 0.001f;				///< minimum allowed value of _dt (sec)
 	static constexpr float DT_DEFAULT = 0.02f;			///< default value for _dt (sec)
-	static constexpr float DT_MAX = 1.0f;				///< max value of _dt allowed before a filter state reset is performed (sec)
 
 	// controller mode logic
 	bool _underspeed_detected{false};				///< true when an underspeed condition has been detected
@@ -306,7 +305,7 @@ private:
 	/**
 	 * Update throttle setpoint
 	 */
-	void _update_throttle_setpoint(float throttle_cruise, const math::Matrix<3, 3> &rotMat);
+	void _update_throttle_setpoint(float throttle_cruise, const matrix::Dcmf &rotMat);
 
 	/**
 	 * Detect an uncommanded descent
