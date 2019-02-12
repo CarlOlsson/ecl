@@ -75,8 +75,8 @@ void Ekf::runTerrainEstimator()
 	// Perform a continuity check on range finder data
 	checkRangeDataContinuity();
 
-	// Perform initialisation check. Reinitialize terrain estimate if variance is very large
-	if (!_terrain_initialised || _terrain_var > 100.0f) {
+	// Perform initialisation check
+	if (!_terrain_initialised) {
 		_terrain_initialised = initHagl();
 
 	} else {
