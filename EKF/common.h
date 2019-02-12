@@ -330,7 +330,7 @@ struct parameters {
 	float acc_bias_learn_gyr_lim{3.0f};	///< learning is disabled if the magnitude of the IMU angular rate vector is greater than this (rad/sec)
 	float acc_bias_learn_tc{0.5f};		///< time constant used to control the decaying envelope filters applied to the accel and gyro magnitudes (sec)
 
-	unsigned reset_timeout_max{7000000};	///< maximum time we allow horizontal inertial dead reckoning before attempting to reset the states to the measurement or change _control_status if the data is unavailable (uSec)
+	unsigned reset_timeout_max{4000000};	///< WINGTRA: maximum time we allow horizontal inertial dead reckoning before attempting to reset the states to the measurement or change _control_status if the data is unavailable (uSec)
 	unsigned no_aid_timeout_max{1000000};	///< maximum lapsed time from last fusion of a measurement that constrains horizontal velocity drift before the EKF will determine that the sensor is no longer contributing to aiding (uSec)
 
 	int32_t valid_timeout_max{5000000};	///< amount of time spent inertial dead reckoning before the estimator reports the state estimates as invalid (uSec)
