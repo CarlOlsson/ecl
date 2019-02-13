@@ -39,7 +39,6 @@
  */
 
 #include <float.h>
-#include <mathlib/math/protected_functions.h>
 
 #include "ecl_l1_pos_controller.h"
 
