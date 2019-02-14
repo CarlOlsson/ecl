@@ -176,8 +176,8 @@ int map_projection_reproject(const struct map_projection_reference_s *ref, float
 	if (fabs(c) > 0) {
 		const double sin_c = sin(c);
 		const double cos_c = cos(c);
+		
 		// WINGTRA: using protected function to avoid NaNs
-
 		const double lat_rad = asin_protected(cos_c * ref->sin_lat + (x_rad * sin_c * ref->cos_lat) / c);
 		const double lon_rad = (ref->lon_rad + atan2(y_rad * sin_c, c * ref->cos_lat * cos_c - x_rad * ref->sin_lat * sin_c));
 
