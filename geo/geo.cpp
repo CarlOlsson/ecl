@@ -171,13 +171,14 @@ int map_projection_reproject(const struct map_projection_reference_s *ref, float
 
 	const double x_rad = (double)x / CONSTANTS_RADIUS_OF_EARTH;
 	const double y_rad = (double)y / CONSTANTS_RADIUS_OF_EARTH;
-	const double c = sqrt(x_rad * x_rad + y_rad * y_rad);
+	const double c = sqrt_protected(x_rad * x_rad + y_rad * y_rad);  // WINGTRA: using protected function to avoid NaNs
 
 	if (fabs(c) > 0) {
 		const double sin_c = sin(c);
 		const double cos_c = cos(c);
+		// WINGTRA: using protected function to avoid NaNs
 
-		const double lat_rad = asin(cos_c * ref->sin_lat + (x_rad * sin_c * ref->cos_lat) / c);
+		const double lat_rad = asin_protected(cos_c * ref->sin_lat + (x_rad * sin_c * ref->cos_lat) / c);
 		const double lon_rad = (ref->lon_rad + atan2(y_rad * sin_c, c * ref->cos_lat * cos_c - x_rad * ref->sin_lat * sin_c));
 
 		*lat = math::degrees(lat_rad);
@@ -309,7 +310,7 @@ void waypoint_from_heading_and_distance(double lat_start, double lon_start, floa
 	double lat_start_rad = math::radians(lat_start);
 	double lon_start_rad = math::radians(lon_start);
 
-	*lat_target = asin(sin(lat_start_rad) * cos(radius_ratio) + cos(lat_start_rad) * sin(radius_ratio) * cos((double)bearing));
+	*lat_target = asin_protected(sin(lat_start_rad) * cos(radius_ratio) + cos(lat_start_rad) * sin(radius_ratio) * cos((double)bearing));  // WINGTRA: using protected function to avoid NaNs
 	*lon_target = lon_start_rad + atan2(sin((double)bearing) * sin(radius_ratio) * cos(lat_start_rad),
 					    cos(radius_ratio) - sin(lat_start_rad) * sin(*lat_target));
 
@@ -533,7 +534,7 @@ float get_distance_to_point_global_wgs84(double lat_now, double lon_now, float a
 	double d_lon = y_rad - current_y_rad;
 
 	double a = sin(d_lat / 2.0) * sin(d_lat / 2.0) + sin(d_lon / 2.0) * sin(d_lon / 2.0) * cos(current_x_rad) * cos(x_rad);
-	double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+	double c = 2 * atan2(sqrt_protected(a), sqrt_protected(1 - a));  // WINGTRA: using protected function to avoid NaNs
 
 	const float dxy = static_cast<float>(CONSTANTS_RADIUS_OF_EARTH * c);
 	const float dz = static_cast<float>(alt_now - alt_next);
@@ -541,7 +542,7 @@ float get_distance_to_point_global_wgs84(double lat_now, double lon_now, float a
 	*dist_xy = fabsf(dxy);
 	*dist_z = fabsf(dz);
 
-	return sqrtf(dxy * dxy + dz * dz);
+	return sqrt_protected(dxy * dxy + dz * dz);  // WINGTRA: using protected function to avoid NaNs
 }
 
 float mavlink_wpm_distance_to_point_local(float x_now, float y_now, float z_now,
@@ -552,8 +553,8 @@ float mavlink_wpm_distance_to_point_local(float x_now, float y_now, float z_now,
 	float dy = y_now - y_next;
 	float dz = z_now - z_next;
 
-	*dist_xy = sqrtf(dx * dx + dy * dy);
+	*dist_xy = sqrt_protected(dx * dx + dy * dy);  // WINGTRA: using protected function to avoid NaNs
 	*dist_z = fabsf(dz);
 
-	return sqrtf(dx * dx + dy * dy + dz * dz);
+	return sqrt_protected(dx * dx + dy * dy + dz * dz);  // WINGTRA: using protected function to avoid NaNs
 }
