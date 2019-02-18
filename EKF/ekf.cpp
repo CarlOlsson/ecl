@@ -673,5 +673,5 @@ Quatf Ekf::calculate_quaternion() const
 
 	// increment the quaternions using the corrected delta angle vector
 	// the quaternions must always be normalised after modification
-	return Quatf{_output_new.quat_nominal * AxisAnglef{delta_angle}}.unit();
+	return Quatf{_output_new.quat_nominal * AxisAnglef{delta_angle}}.unit_or_zero();  // WINGTRA: use unit_or_zero instead to protect against NaN
 }
