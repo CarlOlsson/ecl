@@ -278,7 +278,7 @@ float get_distance_to_next_waypoint(double lat_now, double lon_now, double lat_n
 
 	const double a = sin(d_lat / 2.0) * sin(d_lat / 2.0) + sin(d_lon / 2.0) * sin(d_lon / 2.0) * cos(lat_now_rad) * cos(lat_next_rad);
 
-	const double c = atan2(sqrt_protected(a), sqrt_protected(1.0 - a)); // WINGTRA: use protected
+	const double c = atan2(sqrt_protected(a), sqrt_protected(1.0 - a));  // WINGTRA: use protected
 
 	return static_cast<float>(CONSTANTS_RADIUS_OF_EARTH * 2.0 * c);
 }
