@@ -230,7 +230,7 @@ public:
 		/* calculate the ratio introduced in [2] */
 		_L1_ratio = 1.0f / M_PI_F * _L1_damping * _L1_period;
 		/* calculate normalized frequency for heading tracking */
-		_heading_omega = sqrtf(2.0f) * M_PI_F / _L1_period;
+		_heading_omega = sqrt_protected(2.0f) * M_PI_F / _L1_period;  // WINGTRA: use protected
 	}
 
 
