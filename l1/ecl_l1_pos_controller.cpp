@@ -219,7 +219,7 @@ void ECL_L1_Pos_Controller::navigate_waypoints(const matrix::Vector2f &vector_A,
 			float sine_eta1 = xtrackErr / _L1_distance;
 			/* limit output to 45 degrees */
 			sine_eta1 = math::constrain(sine_eta1, -1.0f * M_SQRT1_2_F, M_SQRT1_2_F); //sin(pi/4) = M_SQRT1_2_F
-			float eta1 = asin_protected(sine_eta1); // WINGTRA: using protected function to avoid NaNs
+			float eta1 = asin_protected(sine_eta1);  // WINGTRA: using protected function to avoid NaNs
 			eta = eta1 + eta2;
 			/* bearing from current position to L1 point */
 			_nav_bearing = atan2f(vector_AB(1), vector_AB(0)) + eta1;
@@ -243,7 +243,7 @@ void ECL_L1_Pos_Controller::navigate_waypoints(const matrix::Vector2f &vector_A,
 
 		if (wind_speed > airspeed) {
 			/* calculate ground tracking bounds */
-			float ground_speed_bearing_bnd = asin_protected(airspeed / wind_speed); // WINGTRA: using protected function to avoid NaNs
+			float ground_speed_bearing_bnd = asin_protected(airspeed / wind_speed);  // WINGTRA: using protected function to avoid NaNs
 			float ground_speed_bnd_min = matrix::wrap_pi(wind_bearing - ground_speed_bearing_bnd);
 			float ground_speed_bnd_max = matrix::wrap_pi(wind_bearing + ground_speed_bearing_bnd);
 
@@ -251,7 +251,7 @@ void ECL_L1_Pos_Controller::navigate_waypoints(const matrix::Vector2f &vector_A,
 			if (checkBearingTarget(_nav_bearing, ground_speed_bnd_min, ground_speed_bnd_max)) {
 				/* bearing is feasible, but must command heading to avoid multiple ground speed vector solutions */
 				float eta_wind = matrix::wrap_pi(_nav_bearing - wind_bearing);
-				float eta_airspeed = asin_protected(wind_speed * sinf(fabsf(eta_wind)) / airspeed); // WINGTRA: using protected function to avoid NaNs
+				float eta_airspeed = asin_protected(wind_speed * sinf(fabsf(eta_wind)) / airspeed);  // WINGTRA: using protected function to avoid NaNs
 				float L1_heading = matrix::wrap_pi(_nav_bearing + (fabsf(eta_wind) < FLT_EPSILON ? 0.0f : eta_wind / fabsf(
 								    eta_wind)) * eta_airspeed);
 				eta = matrix::wrap_pi(L1_heading - heading);
@@ -342,7 +342,7 @@ void ECL_L1_Pos_Controller::navigate_loiter(const matrix::Vector2f &vector_A,
 			float cos_gam = (_L1_distance * _L1_distance + (dist_to_circle + radius) * (dist_to_circle + radius) - radius * radius)
 					/ 2.0f / _L1_distance / (dist_to_circle + radius);
 			cos_gam = math::constrain(cos_gam, -1.0f, 1.0f);
-			float gam = acos_protected(cos_gam); // WINGTRA: using protected function to avoid NaNs
+			float gam = acos_protected(cos_gam);  // WINGTRA: using protected function to avoid NaNs
 			_nav_bearing = matrix::wrap_pi(atan2f(-vector_A_to_airplane(1), -vector_A_to_airplane(0)) - float(loiter_direction) * gam);
 		}
 
@@ -360,7 +360,7 @@ void ECL_L1_Pos_Controller::navigate_loiter(const matrix::Vector2f &vector_A,
 		/* calculate error angle eta */
 		if (wind_speed > airspeed) {
 			/* calculate ground tracking bounds */
-			float ground_speed_bearing_bnd = asin_protected(airspeed / wind_speed); // WINGTRA: using protected function to avoid NaNs
+			float ground_speed_bearing_bnd = asin_protected(airspeed / wind_speed);  // WINGTRA: using protected function to avoid NaNs
 			float ground_speed_bnd_min = matrix::wrap_pi(wind_bearing - ground_speed_bearing_bnd);
 			float ground_speed_bnd_max = matrix::wrap_pi(wind_bearing + ground_speed_bearing_bnd);
 
