@@ -82,7 +82,7 @@ static constexpr const int16_t declination_table[19][37] = \
 };
 
 // Wingtra: extended inclination data in degrees
-static constexpr const int16_t inclination_table[19][37] = \
+static constexpr const int8_t inclination_table[19][37] = \
 {
     { -72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72},
     { -78,-78,-77,-76,-75,-73,-72,-71,-70,-69,-68,-67,-67,-66,-66,-65,-65,-65,-66,-66,-66,-67,-68,-69,-70,-71,-73,-74,-75,-76,-77,-78,-79,-79,-79,-79,-78},
@@ -106,7 +106,7 @@ static constexpr const int16_t inclination_table[19][37] = \
 };
 
 // Wingtra: extended strength data in centi-Tesla
-static constexpr const int16_t strength_table[19][37] = \
+static constexpr const int8_t strength_table[19][37] = \
 {
     { 55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55},
     { 61,60,59,58,57,56,55,54,53,52,50,49,48,48,47,46,46,46,46,47,48,48,50,51,52,54,55,57,58,59,60,61,61,62,61,61,61},
@@ -145,6 +145,42 @@ get_lookup_table_index(float *val, float min, float max)
 
 static float
 get_table_data(float lat, float lon, const int16_t table[19][37] /*Wingtra: use our extended table*/)
+{
+	/*
+	 * If the values exceed valid ranges, return zero as default
+	 * as we have no way of knowing what the closest real value
+	 * would be.
+	 */
+	if (lat < -90.0f || lat > 90.0f ||
+	    lon < -180.0f || lon > 180.0f) {
+		return 0.0f;
+	}
+
+	/* round down to nearest sampling resolution */
+	float min_lat = int(lat / SAMPLING_RES) * SAMPLING_RES;
+	float min_lon = int(lon / SAMPLING_RES) * SAMPLING_RES;
+
+	/* find index of nearest low sampling point */
+	unsigned min_lat_index = get_lookup_table_index(&min_lat, SAMPLING_MIN_LAT, SAMPLING_MAX_LAT);
+	unsigned min_lon_index = get_lookup_table_index(&min_lon, SAMPLING_MIN_LON, SAMPLING_MAX_LON);
+
+	const float data_sw = table[min_lat_index][min_lon_index];
+	const float data_se = table[min_lat_index][min_lon_index + 1];
+	const float data_ne = table[min_lat_index + 1][min_lon_index + 1];
+	const float data_nw = table[min_lat_index + 1][min_lon_index];
+
+	/* perform bilinear interpolation on the four grid corners */
+	const float lat_scale = constrain((lat - min_lat) / SAMPLING_RES, 0.0f, 1.0f);
+	const float lon_scale = constrain((lon - min_lon) / SAMPLING_RES, 0.0f, 1.0f);
+
+	const float data_min = lon_scale * (data_se - data_sw) + data_sw;
+	const float data_max = lon_scale * (data_ne - data_nw) + data_nw;
+
+	return lat_scale * (data_max - data_min) + data_min;
+}
+
+static float
+get_table_data(float lat, float lon, const int8_t table[19][37] /*Wingtra: use our extended table*/)
 {
 	/*
 	 * If the values exceed valid ranges, return zero as default
