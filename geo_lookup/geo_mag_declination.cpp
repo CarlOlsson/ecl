@@ -57,7 +57,7 @@ static constexpr float SAMPLING_MAX_LAT	= 90.0f;
 static constexpr float SAMPLING_MIN_LON	= -180.0f;
 static constexpr float SAMPLING_MAX_LON	= 180.0f;
 
-// declination data in degrees
+// Wingtra: extended declination data in degrees
 static constexpr const int16_t declination_table[19][37] = \
 {
     { 149,139,129,119,109,99,89,79,69,59,49,39,29,19,9,-1,-11,-21,-31,-41,-51,-61,-71,-81,-91,-101,-111,-121,-131,-141,-151,-161,-171,179,169,159,149 },
@@ -81,7 +81,7 @@ static constexpr const int16_t declination_table[19][37] = \
     { -179,-169,-159,-149,-139,-129,-119,-109,-99,-89,-79,-69,-59,-49,-39,-29,-19,-9,1,11,21,31,41,51,60,70,80,90,100,110,121,131,141,151,161,171,-179},
 };
 
-// inclination data in degrees
+// Wingtra: extended inclination data in degrees
 static constexpr const int16_t inclination_table[19][37] = \
 {
     { -72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72,-72},
@@ -105,7 +105,7 @@ static constexpr const int16_t inclination_table[19][37] = \
     { 88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88,88                                     },
 };
 
-// strength data in centi-Tesla
+// Wingtra: extended strength data in centi-Tesla
 static constexpr const int16_t strength_table[19][37] = \
 {
     { 55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55},
@@ -144,7 +144,7 @@ get_lookup_table_index(float *val, float min, float max)
 }
 
 static float
-get_table_data(float lat, float lon, const int16_t table[19][37])
+get_table_data(float lat, float lon, const int16_t table[19][37] /*Wingtra: use our extended table*/)
 {
 	/*
 	 * If the values exceed valid ranges, return zero as default
