@@ -379,7 +379,7 @@ void Ekf::resetHeight()
 void Ekf::alignOutputFilter()
 {
 	// calculate the quaternion delta between the output and EKF quaternions at the EKF fusion time horizon
-	Quatf q_delta = _state.quat_nominal.inversed() * _output_sample_delayed.quat_nominal;
+	Quatf q_delta = _output_sample_delayed.quat_nominal.inversed() *  _state.quat_nominal;
 	q_delta.normalize();
 
 	// calculate the velocity and posiiton deltas between the output and EKF at the EKF fusion time horizon
@@ -387,13 +387,19 @@ void Ekf::alignOutputFilter()
 	const Vector3f pos_delta = _state.pos - _output_sample_delayed.pos;
 
 	// loop through the output filter state history and add the deltas
-	// Note q1 *= q2 is equivalent to q1 = q2 * q1
+	// Note q1 *= q2 is equivalent to q1 = q1 * q2
 	for (uint8_t i = 0; i < _output_buffer.get_length(); i++) {
 		_output_buffer[i].quat_nominal *= q_delta;
 		_output_buffer[i].quat_nominal.normalize();
 		_output_buffer[i].vel += vel_delta;
 		_output_buffer[i].pos += pos_delta;
 	}
+
+	_output_new.quat_nominal *= q_delta;
+	_output_new.quat_nominal.normalize();
+
+	_output_sample_delayed.quat_nominal *= q_delta;
+	_output_sample_delayed.quat_nominal.normalize();
 }
 
 // Do a forced re-alignment of the yaw angle to align with the horizontal velocity vector from the GPS.
@@ -552,7 +558,7 @@ bool Ekf::realignYawGPS()
 }
 
 // Reset heading and magnetic field states
-bool Ekf::resetMagHeading(Vector3f &mag_init)
+bool Ekf::resetMagHeading(Vector3f &mag_init, bool increase_yaw_var, bool update_buffer)
 {
 	// prevent a reset being performed more than once on the same frame
 	if (_imu_sample_delayed.time_us == _flt_mag_align_start_time) {
@@ -716,21 +722,6 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 	Quatf q_error =  quat_before_reset.inversed() * quat_after_reset;
 	q_error.normalize();
 
-	// convert the quaternion delta to a delta angle
-	Vector3f delta_ang_error;
-	float scalar;
-
-	if (q_error(0) >= 0.0f) {
-		scalar = -2.0f;
-
-	} else {
-		scalar = 2.0f;
-	}
-
-	delta_ang_error(0) = scalar * q_error(1);
-	delta_ang_error(1) = scalar * q_error(2);
-	delta_ang_error(2) = scalar * q_error(3);
-
 	// update quaternion states
 	_state.quat_nominal = quat_after_reset;
 	uncorrelateQuatStates();
@@ -746,24 +737,28 @@ bool Ekf::resetMagHeading(Vector3f &mag_init)
 		resetExtVisRotMat();
 	}
 
-	// update the yaw angle variance using the variance of the measurement
-	if (_control_status.flags.ev_yaw) {
-		// using error estimate from external vision data
-		increaseQuatYawErrVariance(sq(fmaxf(_ev_sample_delayed.angErr, 1.0e-2f)));
-	} else if (_params.mag_fusion_type <= MAG_FUSE_TYPE_AUTOFW) {
-		// using magnetic heading tuning parameter
-		increaseQuatYawErrVariance(sq(fmaxf(_params.mag_heading_noise, 1.0e-2f)));
+	if (increase_yaw_var) {
+		// update the yaw angle variance using the variance of the measurement
+		if (_control_status.flags.ev_yaw) {
+			// using error estimate from external vision data
+			increaseQuatYawErrVariance(sq(fmaxf(_ev_sample_delayed.angErr, 1.0e-2f)));
+		} else if (_params.mag_fusion_type <= MAG_FUSE_TYPE_AUTOFW) {
+			// using magnetic heading tuning parameter
+			increaseQuatYawErrVariance(sq(fmaxf(_params.mag_heading_noise, 1.0e-2f)));
+		}
 	}
 
-	// add the reset amount to the output observer buffered data
-	for (uint8_t i = 0; i < _output_buffer.get_length(); i++) {
-		// Note q1 *= q2 is equivalent to q1 = q2 * q1
-		_output_buffer[i].quat_nominal *= _state_reset_status.quat_change;
-	}
+	if (update_buffer) {
+		// add the reset amount to the output observer buffered data
+		for (uint8_t i = 0; i < _output_buffer.get_length(); i++) {
+			// Note q1 *= q2 is equivalent to q1 = q2 * q1
+			_output_buffer[i].quat_nominal *= _state_reset_status.quat_change;
+		}
 
-	// apply the change in attitude quaternion to our newest quaternion estimate
-	// which was already taken out from the output buffer
-	_output_new.quat_nominal = _state_reset_status.quat_change * _output_new.quat_nominal;
+		// apply the change in attitude quaternion to our newest quaternion estimate
+		// which was already taken out from the output buffer
+		_output_new.quat_nominal = _state_reset_status.quat_change * _output_new.quat_nominal;
+	}
 
 	// capture the reset event
 	_state_reset_status.quat_counter++;
