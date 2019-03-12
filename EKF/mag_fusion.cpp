@@ -872,9 +872,12 @@ void Ekf::fuseDeclination(float decl_sigma)
 	Kfusion[22] = -t4*t13*(P[22][16]*magE-P[22][17]*magN);
 	Kfusion[23] = -t4*t13*(P[23][16]*magE-P[23][17]*magN);
 
-	// calculate innovation and constrain
-	float innovation = atan2f(magE, magN) - _mag_declination;
-	innovation = math::constrain(innovation, -0.5f, 0.5f);
+	// the declination is calculated from the states if the magnetometer is aligned
+	float _declination_innov = 0.0f;
+	if (!_control_status.flags.mag_align_complete) {
+		_declination_innov = atan2f(magE, magN) - _mag_declination;
+		_declination_innov = math::constrain(_declination_innov, -0.5f, 0.5f);
+	}
 
 	// apply covariance correction via P_new = (I -K*H)*P
 	// first calculate expression for KHP
