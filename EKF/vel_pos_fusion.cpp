@@ -76,7 +76,7 @@ void Ekf::fuseVelPosHeight()
 	if (_fuse_vert_vel) {
 		fuse_map[2] = true;
 		// observation variance - use receiver reported accuracy with parameter setting the minimum value
-		R[2] = fmaxf(_params.gps_vel_noise, 0.01f);
+		R[2] = fmaxf(_params.gps_vel_noise * 1.5f, 0.01f); // WINGTRA: Increase measurement noise
 		// use scaled horizontal speed accuracy assuming typical ratio of VDOP/HDOP
 		R[2] = 1.5f * fmaxf(R[2], _gps_sample_delayed.sacc);
 		R[2] = R[2] * R[2];
