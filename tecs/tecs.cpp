@@ -161,7 +161,8 @@ void TECS::_update_speed_states(float airspeed_setpoint, float indicated_airspee
 	// If airspeed measurements are not being used, fix the airspeed estimate to halfway between
 	// min and max limits
 	if (!ISFINITE(indicated_airspeed) || !airspeed_sensor_enabled()) {
-		_EAS = 0.5f * (_indicated_airspeed_min + _indicated_airspeed_max);
+		// _EAS = 0.5f * (_indicated_airspeed_min + _indicated_airspeed_max); // WINGTRA
+		_EAS = 16.0f;
 
 	} else {
 		_EAS = indicated_airspeed;
@@ -526,7 +527,7 @@ void TECS::_initialize_states(float pitch, float throttle_cruise, float baro_alt
 		_vert_pos_state = baro_altitude;
 		_tas_rate_state = 0.0f;
 		_tas_state = _EAS * EAS2TAS;
-		_throttle_integ_state = (_in_air ? 0.1f : 0.0f); // WINGTRA: Init throttle integ. to 0.1 after forward transition
+		_throttle_integ_state = 0.0f;
 		_pitch_integ_state = 0.0f;
 		_last_throttle_setpoint = (_in_air ? throttle_cruise : 0.0f);;
 		_last_pitch_setpoint = constrain(pitch, _pitch_setpoint_min, _pitch_setpoint_max);
