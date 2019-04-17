@@ -420,7 +420,7 @@ void TECS::_update_throttle_setpoint_without_airspeed(const float throttle_cruis
 	// Assume induced drag scales linearly with normal load factor.
 	// The additional normal load factor is given by (1/cos(bank angle) - 1)
 	const float cosPhi = sqrt_protected((rotMat(0, 1) * rotMat(0, 1)) + (rotMat(1, 1) * rotMat(1, 1)));
-	const float STE_rate_setpoint =_load_factor_correction * (1.0f / constrain(cosPhi, 0.1f, 1.0f) - 1.0f);
+	const float STE_rate_setpoint =_load_factor_correction * (1.0f / constrain(cosPhi * cosPhi, 0.1f, 1.0f) - 1.0f);
 	_throttle_setpoint = _throttle_setpoint + STE_rate_setpoint / _STE_rate_max * (_throttle_setpoint_max - throttle_cruise);
 
 	// Constrain throttle setpoint
