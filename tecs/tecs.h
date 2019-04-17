@@ -303,9 +303,14 @@ private:
 	void _update_energy_estimates();
 
 	/**
-	 * Update throttle setpoint
+	 * Update throttle setpoint when airspeed is available
 	 */
-	void _update_throttle_setpoint(float throttle_cruise, const matrix::Dcmf &rotMat);
+	void _update_throttle_setpoint_with_airspeed(float throttle_cruise, const matrix::Dcmf &rotMat);
+
+	/**
+	 * Update throttle setpoint when airspeed is now available
+	 */
+	void _update_throttle_setpoint_without_airspeed(float throttle_cruise, const matrix::Dcmf &rotMat);
 
 	/**
 	 * Detect an uncommanded descent

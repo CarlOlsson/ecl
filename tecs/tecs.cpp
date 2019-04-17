@@ -302,7 +302,8 @@ void TECS::_update_energy_estimates()
 	_SKE_rate = _tas_state * _speed_derivative;// kinetic energy rate of change
 }
 
-void TECS::_update_throttle_setpoint(const float throttle_cruise, const matrix::Dcmf &rotMat)
+// WINGTRA: Changed name
+void TECS::_update_throttle_setpoint_with_airspeed(const float throttle_cruise, const matrix::Dcmf &rotMat)
 {
 	// Calculate total energy error
 	_STE_error = _SPE_setpoint - _SPE_estimate + _SKE_setpoint - _SKE_estimate;
@@ -395,6 +396,35 @@ void TECS::_update_throttle_setpoint(const float throttle_cruise, const matrix::
 
 		_throttle_setpoint = constrain(_throttle_setpoint, _throttle_setpoint_min, _throttle_setpoint_max);
 	}
+}
+
+// WINGTRA
+void TECS::_update_throttle_setpoint_without_airspeed(const float throttle_cruise, const matrix::Dcmf &rotMat)
+{
+	// Set throttle integrator state to zero since it is not used without airspeed
+	_throttle_integ_state = 0.0f;
+
+	if (_pitch_setpoint > 0.0f && _pitch_setpoint_max > 0.0f) {
+		// throttle is between cruise and maximum
+		_throttle_setpoint = throttle_cruise + _pitch_setpoint * (_throttle_setpoint_max - throttle_cruise) / _pitch_setpoint_max;
+
+	} else if (_pitch_setpoint < 0.0f && _pitch_setpoint_min < 0.0f) {
+		// throttle is between cruise and minimum
+		_throttle_setpoint = throttle_cruise + _pitch_setpoint * (_throttle_setpoint_min - throttle_cruise) / _pitch_setpoint_min;
+
+	} else {
+		_throttle_setpoint = throttle_cruise;
+	}
+
+	// Adjust the demanded total energy rate to compensate for induced drag rise in turns.
+	// Assume induced drag scales linearly with normal load factor.
+	// The additional normal load factor is given by (1/cos(bank angle) - 1)
+	const float cosPhi = sqrt_protected((rotMat(0, 1) * rotMat(0, 1)) + (rotMat(1, 1) * rotMat(1, 1)));
+	const float STE_rate_setpoint =_load_factor_correction * (1.0f / constrain(cosPhi, 0.1f, 1.0f) - 1.0f);
+	_throttle_setpoint = _throttle_setpoint + STE_rate_setpoint / _STE_rate_max * (_throttle_setpoint_max - throttle_cruise);
+
+	// Constrain throttle setpoint
+	_throttle_setpoint = constrain(_throttle_setpoint, _throttle_setpoint_min, _throttle_setpoint_max);
 }
 
 void TECS::_detect_uncommanded_descent()
@@ -625,7 +655,11 @@ void TECS::update_pitch_throttle(const matrix::Dcmf &rotMat, float pitch, float 
 	_update_energy_estimates();
 
 	// Calculate the throttle demand
-	_update_throttle_setpoint(throttle_cruise, rotMat);
+	if (airspeed_sensor_enabled()) {
+		_update_throttle_setpoint_with_airspeed(throttle_cruise, rotMat);
+	} else {
+		_update_throttle_setpoint_without_airspeed(throttle_cruise, rotMat);
+	}
 
 	// Calculate the pitch demand
 	_update_pitch_setpoint();
