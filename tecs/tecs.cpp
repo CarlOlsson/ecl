@@ -325,7 +325,7 @@ void TECS::_update_throttle_setpoint_with_airspeed(const float throttle_cruise, 
 		// Assume induced drag scales linearly with normal load factor.
 		// The additional normal load factor is given by (1/cos(bank angle) - 1)
 		float cosPhi = sqrt_protected((rotMat(0, 1) * rotMat(0, 1)) + (rotMat(1, 1) * rotMat(1, 1)));  // WINGTRA: use protected
-		STE_rate_setpoint = STE_rate_setpoint + _load_factor_correction * (1.0f / constrain(cosPhi, 0.1f, 1.0f) - 1.0f);
+		STE_rate_setpoint = STE_rate_setpoint + _load_factor_correction * (1.0f / constrain(cosPhi * cosPhi, 0.1f, 1.0f) - 1.0f);
 
 		// Calculate a predicted throttle from the demanded rate of change of energy, using the cruise throttle
 		// as the starting point. Assume:
