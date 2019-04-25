@@ -132,6 +132,13 @@ public:
 	void			set_equal_value_threshold(uint32_t threshold);
 
 
+	/**
+	 * WINGTRA: Read the states for the whole group
+	 *
+	 * @param flags Array to store results
+	 */
+	void			get_validation_state(uint32_t flags[4]);
+
 private:
 	DataValidator *_first{nullptr};		/**< first node in the group */
 	DataValidator *_last{nullptr};		/**< last node in the group */
