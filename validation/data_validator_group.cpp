@@ -42,6 +42,7 @@
 #include "data_validator_group.h"
 #include <ecl.h>
 #include <float.h>
+#include <cstring>
 
 DataValidatorGroup::DataValidatorGroup(unsigned siblings)
 {
@@ -338,3 +339,26 @@ DataValidatorGroup::failover_state()
 
 	return DataValidator::ERROR_FLAG_NO_ERROR;
 }
+
+// WINGTRA
+void
+DataValidatorGroup::get_validation_state(uint32_t flags[4])
+{
+	DataValidator *next = _first;
+	unsigned i = 0;
+
+	uint32_t _flags[4];
+	memset(&_flags, 0, sizeof(_flags));
+
+	while (next != nullptr) {
+		if (next->used()) {
+			_flags[i] = next->state();
+		}
+
+		next = next->sibling();
+		i++;
+	}
+
+	memcpy(flags, _flags, 4 * sizeof(uint32_t));
+}
+// WINGTRA: End
